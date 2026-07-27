@@ -1,17 +1,30 @@
 services:
 
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "127.0.0.1:80:80"
+    volumes:
+      - ./nginx/local/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      frontend:
+        condition: service_started
+      backend:
+        condition: service_started
+    networks:
+      - public
+      - frontend_backend
+
   backend:
-    container_name: backend
     build:
       context: .
       dockerfile: backend/Dockerfile
-    expose:
-      - "8080"
     volumes:
       - ./backend/storage:/app/backend/storage:rw
     env_file:
       - .env
     environment:
+      POSTGRES_HOST: db
       JWT_SECRET: ${JWT_SECRET:?Add JWT_SECRET with at least 32 characters to .env}
       JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-480}
     depends_on:
@@ -23,7 +36,6 @@ services:
       - backend_db
 
   db:
-    container_name: careeradar_db
     image: postgres:17
     volumes:
       - postgres_data:/var/lib/postgresql/data:rw
@@ -44,19 +56,15 @@ services:
       - backend_db
 
   frontend:
-    container_name: frontend
     build:
       context: .
       dockerfile: frontend/Dockerfile
-    ports:
-      - "8501:8501"
     environment:
       BACKEND_URL: http://backend:8080
     depends_on:
       backend:
         condition: service_started
     networks:
-      - public
       - frontend_backend
 
 volumes:
