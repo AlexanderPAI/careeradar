@@ -2,11 +2,15 @@ services:
 
   nginx:
     image: nginx:alpine
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env before production deployment}
     ports:
       - "80:80"
+      - "443:443"
     volumes:
-      - ./nginx/prod/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/prod/default.conf.template:/etc/nginx/templates/default.conf.template:ro
       - certbot_challenges:/var/www/certbot:ro
+      - ${LETSENCRYPT_DIR:-./nginx/prod/letsencrypt}:/etc/letsencrypt:ro
     depends_on:
       frontend:
         condition: service_started
