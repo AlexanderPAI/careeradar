@@ -2,12 +2,12 @@ import asyncio
 import html
 
 import aiohttp
-import pandas as pd
 import streamlit as st
 
-from frontend.api import BACKEND_URL, auth_headers
+from frontend.api import BACKEND_URL, auth_headers, get_search_vacancies
 from frontend.auth import render_account_sidebar, require_auth
 from frontend.ui import inject_theme, radar_art, render_brand, template
+from frontend.vacancies import render_vacancies
 
 CV_ANALYZER_URL = f"{BACKEND_URL}/v1/cv_analyzer/send_cv"
 SEARCHER_URL = f"{BACKEND_URL}/v1/searcher/chat"
@@ -25,16 +25,6 @@ PROFILE_LABELS = {
     "location": "Город",
     "industries": "Отрасли",
     "languages": "Языки",
-}
-
-COL_META = {
-    "title": ("Вакансия", "28%"),
-    "company": ("Компания", "18%"),
-    "salary": ("Зарплата", "13%"),
-    "city": ("Город", "10%"),
-    "schedule": ("График", "10%"),
-    "experience": ("Опыт", "11%"),
-    "link": ("Ссылка", "10%"),
 }
 
 st.set_page_config(page_title="КарьеРадар", page_icon="🟣", layout="wide")
@@ -107,32 +97,6 @@ def render_text_card(title: str, text: str) -> str:
     )
 
 
-def render_vacancy_table(dataframe: pd.DataFrame) -> str:
-    visible = [column for column in COL_META if column in dataframe.columns]
-    header = "".join(
-        template(
-            "table_header.html", label=COL_META[column][0], width=COL_META[column][1]
-        )
-        for column in visible
-    )
-    rows = []
-    for _, row in dataframe[visible].iterrows():
-        cells = []
-        for column in visible:
-            value = row[column]
-            if column == "link" and pd.notna(value):
-                cells.append(
-                    template(
-                        "table_link_cell.html", url=html.escape(str(value), quote=True)
-                    )
-                )
-            else:
-                rendered = "—" if pd.isna(value) else html.escape(str(value))
-                cells.append(template("table_cell.html", value=rendered))
-        rows.append(template("table_row.html", cells="".join(cells)))
-    return template("vacancy_table.html", header=header, rows="".join(rows))
-
-
 with st.sidebar:
     render_brand()
     render_account_sidebar()
@@ -185,39 +149,28 @@ if "api_response" in st.session_state:
     st.markdown(template("cards_row.html", cards=cards), unsafe_allow_html=True)
 
     if st.button("Сканировать рынок", type="primary", use_container_width=True):
-        with st.status("КарьеРадар сканирует рынок", expanded=True) as search_status:
-            status_text = st.empty()
+        with st.spinner("КарьеРадар сканирует рынок…"):
             try:
-                status_text.write("Ищем возможности на hh.ru и Хабр Карьере…")
                 search_id = asyncio.run(
                     call_searcher(search_prompt, api_response.get("profile_id"))
                 )
-                status_text.write("Сопоставляем требования с вашим профилем…")
-                st.session_state["vacancies"] = asyncio.run(call_filter(search_id))
-                status_text.write(
-                    "Сканирование завершено. Подходящие возможности собраны."
+                asyncio.run(call_filter(search_id))
+                st.session_state["vacancies"] = asyncio.run(
+                    get_search_vacancies(search_id, relevant_only=True)
                 )
-                search_status.update(label="Радар обновлён", state="complete")
             except aiohttp.ClientConnectorError:
-                search_status.update(label="Ошибка соединения", state="error")
                 st.error("Не удалось подключиться к backend.")
                 st.stop()
             except asyncio.TimeoutError:
-                search_status.update(label="Превышено время ожидания", state="error")
                 st.error("Сервер не ответил за 20 минут.")
                 st.stop()
             except RuntimeError as error:
-                search_status.update(label="Ошибка при подборе", state="error")
                 st.error(str(error))
                 st.stop()
 
 if st.session_state.get("vacancies") is not None:
-    dataframe = pd.DataFrame(st.session_state["vacancies"])
-    with st.expander(f"В зоне интереса — {len(dataframe)} вакансий", expanded=True):
-        st.markdown(render_vacancy_table(dataframe), unsafe_allow_html=True)
-        st.download_button(
-            "Скачать CSV",
-            dataframe.to_csv(index=False).encode("utf-8-sig"),
-            file_name="vacancies.csv",
-            mime="text/csv",
-        )
+    render_vacancies(
+        st.session_state["vacancies"],
+        profile_id=str(st.session_state["api_response"]["profile_id"]),
+        csv_filename="vacancies.csv",
+    )

@@ -23,7 +23,7 @@ services:
       - backend_db
 
   db:
-    container_name: hunter_ps
+    container_name: careeradar_db
     image: postgres:17
     volumes:
       - postgres_data:/var/lib/postgresql/data:rw

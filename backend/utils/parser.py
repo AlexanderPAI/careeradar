@@ -155,7 +155,7 @@ class HHParser:
     REQUEST_HEADERS = {
         "Accept": "application/json,text/html,application/xhtml+xml",
         "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
-        "User-Agent": "JobHunter/0.2 (single vacancy parser)",
+        "User-Agent": "Careeradar/0.4 (single vacancy parser)",
     }
 
     def __init__(
