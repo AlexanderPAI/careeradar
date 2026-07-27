@@ -1,9 +1,9 @@
 [project]
-name = "jobhunter"
-version = "0.2.0"
+name = "careeradar"
+version = "0.4.0"
 description = ""
 authors = [
-    {name = "AlexanderPAI",email = "petrov@backendpages.ru"}
+    { name = "AlexanderPAI", email = "petrov@backendpages.ru" }
 ]
 readme = "README.md"
 requires-python = ">=3.13,<4.0.0"
@@ -27,6 +27,8 @@ dependencies = [
     "asyncpg (>=0.31.0,<0.32.0)"
 ]
 
+[tool.poetry]
+package-mode = false
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
