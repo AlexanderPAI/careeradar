@@ -4,11 +4,9 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import aiohttp
-import pandas as pd
 import streamlit as st
 
 from frontend.api import (
-    analyze_vacancy,
     get_profile,
     get_resume_recommendations,
     get_search_vacancies,
@@ -16,6 +14,7 @@ from frontend.api import (
 )
 from frontend.auth import render_account_sidebar, require_auth
 from frontend.ui import inject_theme, render_brand, template
+from frontend.vacancies import render_vacancies
 
 MOSCOW = ZoneInfo("Europe/Moscow")
 
@@ -32,16 +31,6 @@ PROFILE_LABELS = {
     "industries": "Отрасли",
     "languages": "Языки",
     "education": "Образование",
-}
-
-COL_META = {
-    "title": ("Вакансия", "28%"),
-    "company": ("Компания", "18%"),
-    "salary": ("Зарплата", "13%"),
-    "city": ("Город", "10%"),
-    "schedule": ("График", "10%"),
-    "experience": ("Опыт", "11%"),
-    "link": ("Ссылка", "10%"),
 }
 
 st.set_page_config(page_title="Профиль — КарьеРадар", page_icon="🟣", layout="wide")
@@ -82,32 +71,6 @@ def render_text_card(title: str, text: str) -> str:
     return template(
         "text_card.html", title=html.escape(title), text=html.escape(text or "—")
     )
-
-
-def render_vacancy_table(dataframe: pd.DataFrame) -> str:
-    visible = [column for column in COL_META if column in dataframe.columns]
-    header = "".join(
-        template(
-            "table_header.html", label=COL_META[column][0], width=COL_META[column][1]
-        )
-        for column in visible
-    )
-    rows = []
-    for _, row in dataframe[visible].iterrows():
-        cells = []
-        for column in visible:
-            value = row[column]
-            if column == "link" and pd.notna(value):
-                cells.append(
-                    template(
-                        "table_link_cell.html", url=html.escape(str(value), quote=True)
-                    )
-                )
-            else:
-                rendered = "—" if pd.isna(value) else html.escape(str(value))
-                cells.append(template("table_cell.html", value=rendered))
-        rows.append(template("table_row.html", cells="".join(cells)))
-    return template("vacancy_table.html", header=header, rows="".join(rows))
 
 
 def fallback_search_prompt(profile: dict) -> str:
@@ -226,63 +189,8 @@ if latest_search:
         st.error(f"Не удалось получить вакансии из базы данных: {error}")
         st.stop()
 
-    dataframe = pd.DataFrame(vacancies)
-    with st.expander(f"В зоне интереса — {len(dataframe)} вакансий", expanded=True):
-        if dataframe.empty:
-            st.info("В последнем подборе нет подходящих вакансий.")
-        else:
-            for index, vacancy in enumerate(vacancies):
-                with st.container(border=True):
-                    details, links, action = st.columns(
-                        [4.2, 1.2, 1.7], vertical_alignment="center"
-                    )
-                    with details:
-                        st.markdown(f"**{vacancy.get('title') or '—'}**")
-                        st.caption(
-                            " · ".join(
-                                str(value)
-                                for value in (
-                                    vacancy.get("company"),
-                                    vacancy.get("salary"),
-                                    vacancy.get("city"),
-                                )
-                                if value and value != "—"
-                            )
-                        )
-                    with links:
-                        st.link_button(
-                            "Вакансия ↗",
-                            vacancy["link"],
-                            use_container_width=True,
-                        )
-                    with action:
-                        if st.button(
-                            "Проверить соответствие",
-                            key=f"match_{vacancy['vacancy_id']}_{index}",
-                            use_container_width=True,
-                            type="primary",
-                        ):
-                            with st.spinner("Сопоставляем профиль и вакансию…"):
-                                try:
-                                    analysis_id = asyncio.run(
-                                        analyze_vacancy(
-                                            profile_id,
-                                            str(vacancy["vacancy_id"]),
-                                        )
-                                    )
-                                    st.session_state["selected_analysis_id"] = (
-                                        analysis_id
-                                    )
-                                    st.switch_page("pages/vacancy_analysis.py")
-                                except (
-                                    aiohttp.ClientConnectorError,
-                                    TimeoutError,
-                                    RuntimeError,
-                                ) as error:
-                                    st.error(str(error))
-            st.download_button(
-                "Скачать CSV",
-                dataframe.to_csv(index=False).encode("utf-8-sig"),
-                file_name=f"vacancies_{profile_id}.csv",
-                mime="text/csv",
-            )
+    render_vacancies(
+        vacancies,
+        profile_id=str(profile_id),
+        csv_filename=f"vacancies_{profile_id}.csv",
+    )

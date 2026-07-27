@@ -24,7 +24,7 @@ async def create_user(username: str, password: str) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Создать пользователя Job Hunter")
+    parser = argparse.ArgumentParser(description="Создать пользователя КарьеРадара")
     parser.add_argument("username")
     parser.add_argument(
         "--password", help="Не рекомендуется: пароль попадёт в историю команд"
