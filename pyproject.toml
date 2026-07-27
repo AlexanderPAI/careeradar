@@ -1,7 +1,7 @@
 [project]
 name = "careeradar"
-version = "0.4.0"
-description = ""
+version = "0.4.1"
+description = "Персональная система карьерной навигации с поиском, фильтрацией и анализом вакансий по резюме"
 authors = [
     { name = "AlexanderPAI", email = "petrov@backendpages.ru" }
 ]
