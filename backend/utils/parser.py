@@ -470,8 +470,8 @@ class HHParser:
                         "link": link,
                     }
                 )
-            except Exception as exc:
-                logger.error(f"    [!] Ошибка при разборе карточки: {exc}")
+            except Exception:
+                logger.error("    [!] Ошибка при разборе карточки")
 
         return page_results
 
@@ -490,12 +490,14 @@ class HHParser:
                     url, wait_until="domcontentloaded", timeout=self.GOTO_TIMEOUT_MS
                 )
                 return
-            except Exception as exc:
+            except Exception:
                 if attempt == self.GOTO_RETRY_COUNT - 1:
                     raise
                 delay = self.GOTO_RETRY_BASE_DELAY * (attempt + 1)
                 logger.warning(
-                    f"    [!] Таймаут (попытка {attempt + 1}), жду {delay:.0f}с... ({exc})"
+                    "    [!] Таймаут (попытка %d), повтор через %.0fс",
+                    attempt + 1,
+                    delay,
                 )
                 await asyncio.sleep(delay)
 
@@ -515,7 +517,7 @@ class HHParser:
         try:
             for page_num in range(self.max_pages):
                 url = self._build_url(query, page_num)
-                logger.info(f"  ↳ стр. {page_num + 1}: {url}")
+                logger.info("  ↳ страница %d", page_num + 1)
 
                 if page_num > 0:
                     await asyncio.sleep(self.BETWEEN_PAGES_DELAY)
@@ -710,21 +712,13 @@ class HHParser:
             label: value for label, value in descriptions.items() if value
         }
 
-        if active_filters:
-            logger.info("  Фильтры:")
-            for label, value in active_filters.items():
-                logger.info(f"    • {label}: {value}")
-        else:
-            logger.info("  Фильтры: не заданы")
+        logger.info("  Активных фильтров: %d", len(active_filters))
 
     async def run_parser(self) -> list[dict]:
         logger.info("=" * 60)
         logger.info("  hh.ru Parser")
-        logger.info(f"  Запросы: {', '.join(self.search_queries)}")
-        logger.info(
-            f"  Регион: {'Москва' if self.area == 1 else 'Вся Россия'}"
-            f"  |  Страниц: {self.max_pages}"
-        )
+        logger.info("  Количество запросов: %d", len(self.search_queries))
+        logger.info("  Страниц на запрос: %d", self.max_pages)
         self._log_filters()
         logger.info("=" * 60)
 
@@ -733,8 +727,8 @@ class HHParser:
         async with async_playwright() as pw:
             browser = await pw.chromium.launch(headless=True)
 
-            for query in self.search_queries:
-                logger.info(f"[→] «{query}»")
+            for query_index, query in enumerate(self.search_queries, start=1):
+                logger.info("[→] Запрос %d/%d", query_index, len(self.search_queries))
                 results = await self.search(browser, query)
                 all_vacancies.extend(results)
                 logger.info(f"    Итого: {len(results)}")
@@ -758,16 +752,8 @@ class HHParser:
             self.save_csv(filtered_vacancies)
 
         logger.info(f"\n{'─' * 60}")
-        logger.info("Топ-10 результатов:")
+        logger.info("Результатов для выдачи: %d", len(filtered_vacancies))
         logger.info(f"{'─' * 60}")
-        for vacancy in filtered_vacancies[:10]:
-            logger.info(f"  {vacancy['title']}")
-            logger.info(
-                f"    {vacancy['company']}  |  {vacancy['city']}  |  {vacancy['salary']}"
-            )
-            if vacancy["experience"] != "—":
-                logger.info(f"    {vacancy['experience']}  |  {vacancy['schedule']}")
-            logger.info(f"    {vacancy['link']}")
 
         return filtered_vacancies
 
@@ -806,8 +792,8 @@ class CareerHabrParser(HHParser):
         raw_json = html_lib.unescape(match.group(1))
         try:
             return json.loads(raw_json)
-        except json.JSONDecodeError as exc:
-            logger.error(f"    [!] Не удалось разобрать SSR JSON Habr: {exc}")
+        except json.JSONDecodeError:
+            logger.error("    [!] Не удалось разобрать SSR JSON Habr")
             return {}
 
     @staticmethod
@@ -1091,15 +1077,15 @@ class CareerHabrParser(HHParser):
 
         for page_num in range(self.max_pages):
             url = self._build_url(query, page_num)
-            logger.info(f"  ↳ стр. {page_num + 1}: {url}")
+            logger.info("  ↳ страница %d", page_num + 1)
 
             if page_num > 0:
                 await asyncio.sleep(self.BETWEEN_PAGES_DELAY)
 
             try:
                 page_html = await self._fetch_html(session, url)
-            except Exception as exc:
-                logger.error(f"    [!] Ошибка загрузки страницы Habr: {exc}")
+            except Exception:
+                logger.error("    [!] Ошибка загрузки страницы Habr")
                 break
 
             state = self._extract_ssr_state(page_html)
@@ -1129,11 +1115,8 @@ class CareerHabrParser(HHParser):
     async def run_parser(self) -> list[dict]:
         logger.info("=" * 60)
         logger.info("  Career Habr Parser")
-        logger.info(f"  Запросы: {', '.join(self.search_queries)}")
-        logger.info(
-            f"  Регион: {'Москва' if self.area == 1 else 'Вся Россия'}"
-            f"  |  Страниц: {self.max_pages}"
-        )
+        logger.info("  Количество запросов: %d", len(self.search_queries))
+        logger.info("  Страниц на запрос: %d", self.max_pages)
         self._log_filters()
         logger.info("=" * 60)
 
@@ -1151,8 +1134,8 @@ class CareerHabrParser(HHParser):
         timeout = aiohttp.ClientTimeout(total=60)
 
         async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
-            for query in self.search_queries:
-                logger.info(f"[→] «{query}»")
+            for query_index, query in enumerate(self.search_queries, start=1):
+                logger.info("[→] Запрос %d/%d", query_index, len(self.search_queries))
                 results = await self._search_via_ssr(session, query)
                 all_vacancies.extend(results)
                 logger.info(f"    Итого: {len(results)}")
@@ -1174,15 +1157,7 @@ class CareerHabrParser(HHParser):
             self.save_csv(filtered_vacancies)
 
         logger.info(f"\n{'─' * 60}")
-        logger.info("Топ-10 результатов:")
+        logger.info("Результатов для выдачи: %d", len(filtered_vacancies))
         logger.info(f"{'─' * 60}")
-        for vacancy in filtered_vacancies[:10]:
-            logger.info(f"  {vacancy['title']}")
-            logger.info(
-                f"    {vacancy['company']}  |  {vacancy['city']}  |  {vacancy['salary']}"
-            )
-            if vacancy["experience"] != "—":
-                logger.info(f"    {vacancy['experience']}  |  {vacancy['schedule']}")
-            logger.info(f"    {vacancy['link']}")
 
         return filtered_vacancies

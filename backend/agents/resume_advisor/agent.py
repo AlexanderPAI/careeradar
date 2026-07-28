@@ -12,6 +12,8 @@ Resume Advisor Agent
 
 import json
 import logging
+import time
+import uuid
 from pathlib import Path
 from typing import Annotated, List, TypedDict
 
@@ -39,6 +41,7 @@ class State(TypedDict):
     vacancy: dict
     skill: str
     final_answer: str
+    operation_id: str
 
 
 class ResumeAdvisorAgent:
@@ -47,6 +50,7 @@ class ResumeAdvisorAgent:
         self.graph = self._build_graph()
 
     async def generate_recommendations(self, state: State) -> dict:
+        started_at = time.monotonic()
         skill = state["skill"]
         system_prompt = SKILL_PROMPTS.get(skill)
         if system_prompt is None:
@@ -76,7 +80,14 @@ class ResumeAdvisorAgent:
             ((response.get("choices") or [{}])[0].get("message") or {}).get("content")
             or ""
         ).strip()
-        logger.info("Сформированы рекомендации по резюме, навык: %s", skill)
+        logger.info(
+            "operation_id=%s operation=resume_advice skill=%s status=completed "
+            "result_chars=%d duration_ms=%d",
+            state["operation_id"],
+            skill,
+            len(final_answer),
+            (time.monotonic() - started_at) * 1000,
+        )
 
         return {
             "final_answer": final_answer,
@@ -98,6 +109,7 @@ class ResumeAdvisorAgent:
         skill: str = "base",
         vacancy: dict | None = None,
     ) -> tuple[str, State]:
+        operation_id = uuid.uuid4().hex
         initial_state: State = {
             "messages": [],
             "user_profile": user_profile,
@@ -105,6 +117,20 @@ class ResumeAdvisorAgent:
             "vacancy": vacancy or {},
             "skill": skill,
             "final_answer": "",
+            "operation_id": operation_id,
         }
-        result_state = await self.graph.ainvoke(initial_state)
+        logger.info(
+            "operation_id=%s operation=resume_advice skill=%s status=started",
+            operation_id,
+            skill,
+        )
+        try:
+            result_state = await self.graph.ainvoke(initial_state)
+        except Exception:
+            logger.error(
+                "operation_id=%s operation=resume_advice skill=%s status=failed",
+                operation_id,
+                skill,
+            )
+            raise
         return result_state.get("final_answer", ""), result_state

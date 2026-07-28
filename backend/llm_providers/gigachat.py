@@ -97,6 +97,8 @@ class GigaChatAdapter:
 
     async def chat(self, prompt: list[dict[str, str]]) -> dict[str, Any]:
         """Send prompt to GigaChat and return its OpenAI-compatible response."""
+        operation_id = uuid.uuid4().hex
+        started_at = time.monotonic()
         timeout = aiohttp.ClientTimeout(total=300, connect=30, sock_read=240)
         last_error: Exception | None = None
 
@@ -119,11 +121,17 @@ class GigaChatAdapter:
                             )
                         if response.status >= 400:
                             error = LLMProviderError(
-                                f"GigaChat вернул HTTP {response.status}: "
-                                f"{self._error_message(payload)}"
+                                f"GigaChat вернул HTTP {response.status} "
+                                f"(operation_id={operation_id})"
                             )
                             if 400 <= response.status < 500:
-                                logger.error("%s", error)
+                                logger.error(
+                                    "operation_id=%s provider=gigachat status=failed "
+                                    "http_status=%d attempt=%d",
+                                    operation_id,
+                                    response.status,
+                                    attempt + 1,
+                                )
                                 raise error from None
                             raise error
 
@@ -136,6 +144,13 @@ class GigaChatAdapter:
                                 "GigaChat вернул пустой ответ "
                                 f"(finish_reason={finish_reason})"
                             )
+                        logger.info(
+                            "operation_id=%s provider=gigachat status=completed "
+                            "attempt=%d duration_ms=%d",
+                            operation_id,
+                            attempt + 1,
+                            (time.monotonic() - started_at) * 1000,
+                        )
                         return payload
             except (
                 TimeoutError,
@@ -148,8 +163,15 @@ class GigaChatAdapter:
                 if attempt == 0:
                     await asyncio.sleep(1)
 
-        detail = str(last_error) if last_error else "неизвестная ошибка"
-        logger.error("GigaChat request failed: %s", detail)
+        logger.error(
+            "operation_id=%s provider=gigachat status=failed attempts=%d "
+            "duration_ms=%d error_type=%s",
+            operation_id,
+            attempt + 1,
+            (time.monotonic() - started_at) * 1000,
+            type(last_error).__name__ if last_error else "unknown",
+        )
         raise LLMProviderError(
-            f"GigaChat не дал корректный ответ после двух попыток: {detail}"
+            "GigaChat не дал корректный ответ после двух попыток "
+            f"(operation_id={operation_id})"
         ) from last_error
