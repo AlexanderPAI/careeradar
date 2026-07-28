@@ -21,11 +21,14 @@ services:
       dockerfile: backend/Dockerfile
     volumes:
       - ./backend/storage:/app/backend/storage:rw
+      - ./backend/certs:/run/careeradar/certs:ro
     env_file:
       - .env
     environment:
       APP_ENV: development
       POSTGRES_HOST: db
+      GIGACHAT_ROOT_CA_FILE: /run/careeradar/certs/russian_trusted_root_ca.pem
+      GIGACHAT_SUB_CA_FILE: /run/careeradar/certs/russian_trusted_sub_ca.pem
       JWT_SECRET: ${JWT_SECRET:?Add JWT_SECRET with at least 32 characters to .env}
       JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-480}
     depends_on:
