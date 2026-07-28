@@ -146,15 +146,34 @@ if profile.get("resume_expires_at"):
 else:
     st.caption("Исходный файл и извлечённый текст резюме уже удалены.")
 
+with st.expander("Как обрабатываются данные при AI-анализе"):
+    st.markdown(
+        """
+Для рекомендаций, поиска и сопоставления с вакансией внешний поставщик LLM
+получает только необходимые карьерные поля без имени и контактных данных.
+Текст резюме предварительно обезличивается и ограничивается по объёму.
+Исходный файл внешнему поставщику не передаётся.
+"""
+    )
+
+llm_consent = st.checkbox(
+    "Я согласен на описанную обработку обезличенных данных внешней LLM",
+    key=f"llm_consent_{profile_id}",
+)
+
 recommendations_key = f"resume_recommendations_{profile_id}"
 if latest_recommendation is not None:
     st.session_state[recommendations_key] = latest_recommendation["content"]
 
-if st.button("Получить рекомендации по резюме", use_container_width=True):
+if st.button(
+    "Получить рекомендации по резюме",
+    use_container_width=True,
+    disabled=not llm_consent,
+):
     with st.spinner("Анализируем резюме…"):
         try:
             st.session_state[recommendations_key] = asyncio.run(
-                get_resume_recommendations(profile_id)
+                get_resume_recommendations(profile_id, consent=llm_consent)
             )
         except aiohttp.ClientConnectorError:
             st.error("Не удалось подключиться к backend.")
@@ -165,7 +184,7 @@ if recommendations := st.session_state.get(recommendations_key):
     with st.expander("Рекомендации по резюме", expanded=True):
         st.markdown(recommendations)
 
-repeat_disabled = not search_prompt
+repeat_disabled = not search_prompt or not llm_consent
 button_label = "Обновить радар" if latest_search else "Сканировать рынок"
 if st.button(
     button_label, type="primary", use_container_width=True, disabled=repeat_disabled
@@ -173,7 +192,7 @@ if st.button(
     with st.status("Сканирование рынка", expanded=True) as status:
         try:
             st.write("Ищем новые возможности на hh.ru и Хабр Карьере…")
-            asyncio.run(repeat_search(search_prompt, profile_id))
+            asyncio.run(repeat_search(search_prompt, profile_id, consent=llm_consent))
             status.update(label="Радар обновлён", state="complete")
             st.rerun()
         except aiohttp.ClientConnectorError:
@@ -183,8 +202,10 @@ if st.button(
             status.update(label="Не удалось выполнить подбор", state="error")
             st.error(str(error))
 
-if repeat_disabled:
+if not search_prompt:
     st.caption("Недостаточно данных профиля для формирования поискового запроса.")
+elif not llm_consent:
+    st.caption("Для AI-операций подтвердите согласие на обработку данных выше.")
 
 with st.expander("Удаление профиля"):
     st.warning(
@@ -224,4 +245,5 @@ if latest_search:
         vacancies,
         profile_id=str(profile_id),
         csv_filename=f"vacancies_{profile_id}.csv",
+        llm_consent=llm_consent,
     )

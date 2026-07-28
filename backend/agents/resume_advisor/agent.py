@@ -23,6 +23,7 @@ from langgraph.graph.message import add_messages
 
 from backend.llm_providers.base import LLMAdapter
 from backend.llm_providers.factory import create_llm_adapter
+from backend.privacy import anonymize_text, minimal_profile
 from backend.utils.prompt_loader import load_prompt
 
 logger = logging.getLogger("RESUME_ADVISOR")
@@ -56,8 +57,10 @@ class ResumeAdvisorAgent:
         if system_prompt is None:
             raise ValueError(f"Unsupported resume advisor skill: {skill}")
 
-        profile_json = json.dumps(state["user_profile"], ensure_ascii=False, indent=2)
-        cv_text = state["cv_text"].strip() or (
+        profile_json = json.dumps(
+            minimal_profile(state["user_profile"]), ensure_ascii=False, indent=2
+        )
+        cv_text = anonymize_text(state["cv_text"]).strip() or (
             "Исходный текст резюме недоступен. Анализируй только профиль."
         )
         vacancy_json = json.dumps(

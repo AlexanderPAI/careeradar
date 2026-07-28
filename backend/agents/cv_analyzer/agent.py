@@ -29,6 +29,7 @@ from langgraph.graph.message import add_messages
 from backend.agents.cv_analyzer.tools import extract_cv_text
 from backend.llm_providers.base import LLMAdapter
 from backend.llm_providers.factory import create_llm_adapter
+from backend.privacy import anonymize_text, minimal_profile
 from backend.utils.prompt_loader import load_prompt
 
 logger = logging.getLogger("CV_ANALYZER")
@@ -47,6 +48,7 @@ class State(TypedDict):
     messages: Annotated[List, add_messages]
     cv_path: str
     cv_text: str
+    llm_cv_text: str
     user_profile: dict
     final_answer: str
     operation_id: str
@@ -61,6 +63,7 @@ class CVAnalyzerAgent:
     async def extract_cv(self, state: State) -> dict:
         started_at = time.monotonic()
         cv_text = extract_cv_text.invoke({"cv_path": state["cv_path"]})
+        llm_cv_text = anonymize_text(cv_text)
         logger.info(
             "operation_id=%s stage=extract_cv status=completed chars=%d duration_ms=%d",
             state["operation_id"],
@@ -70,6 +73,7 @@ class CVAnalyzerAgent:
 
         return {
             "cv_text": cv_text,
+            "llm_cv_text": llm_cv_text,
             "messages": [
                 AIMessage(content=f"Резюме прочитано ({len(cv_text)} символов).")
             ],
@@ -80,7 +84,7 @@ class CVAnalyzerAgent:
         started_at = time.monotonic()
         prompt = [
             {"role": "system", "content": build_profile_system},
-            {"role": "user", "content": state["cv_text"]},
+            {"role": "user", "content": state["llm_cv_text"]},
         ]
 
         response = await self.llm.chat(prompt)
@@ -111,7 +115,11 @@ class CVAnalyzerAgent:
     # Нода 3: генерируем промпт для agent-searcher
     async def generate_searcher_prompt(self, state: State) -> dict:
         started_at = time.monotonic()
-        profile_json = json.dumps(state["user_profile"], ensure_ascii=False, indent=2)
+        profile_json = json.dumps(
+            minimal_profile(state["user_profile"], purpose="search"),
+            ensure_ascii=False,
+            indent=2,
+        )
 
         prompt = [
             {"role": "system", "content": generate_searcher_prompt_system},
@@ -168,6 +176,7 @@ class CVAnalyzerAgent:
             "messages": [],
             "cv_path": cv_path,
             "cv_text": "",
+            "llm_cv_text": "",
             "user_profile": {},
             "searcher_prompt": "",
             "operation_id": operation_id,

@@ -2,7 +2,7 @@ import uuid
 from urllib.parse import urlparse
 
 import aiohttp
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from playwright.async_api import Error as PlaywrightError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +25,7 @@ from backend.db.repositories import (
     save_vacancy_analysis,
 )
 from backend.llm_providers.base import LLMProviderError
+from backend.privacy import anonymize_text, require_llm_consent
 from backend.resume_storage import expires_at, save_upload
 from backend.security import get_current_user
 from backend.utils.parser import CareerHabrParser, HHParser
@@ -68,9 +69,11 @@ async def upload_cv(file: UploadFile = File(...)):
 @router.post("/cv_analyzer/send_cv")
 async def cv_analyzer(
     file: UploadFile = File(...),
+    llm_processing_consent: bool = Form(False),
     session: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
+    require_llm_consent(llm_processing_consent)
     if file.content_type not in ALLOWED_TYPES:
         raise HTTPException(
             status_code=400,
@@ -112,6 +115,7 @@ async def resume_recommendations(
     session: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
+    require_llm_consent(request.llm_processing_consent)
     profile = await session.scalar(
         select(CandidateProfile).where(
             CandidateProfile.id == request.profile_id,
@@ -147,6 +151,7 @@ async def analyze_vacancy_match(
     session: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
+    require_llm_consent(request.llm_processing_consent)
     profile = await session.scalar(
         select(CandidateProfile).where(
             CandidateProfile.id == request.profile_id,
@@ -217,6 +222,7 @@ async def searcher_chat(
     session: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
+    require_llm_consent(searcher_request.llm_processing_consent)
     if searcher_request.profile_id is not None:
         profile = await session.scalar(
             select(CandidateProfile).where(
@@ -227,7 +233,7 @@ async def searcher_chat(
         if profile is None:
             raise HTTPException(status_code=404, detail="Profile not found")
     search_id = await search_agent.run(
-        searcher_request.message,
+        anonymize_text(searcher_request.message),
         str(searcher_request.profile_id) if searcher_request.profile_id else None,
         str(user.id),
     )
@@ -240,6 +246,7 @@ async def filter_check(
     session: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
+    require_llm_consent(request.llm_processing_consent)
     profile = await session.scalar(
         select(CandidateProfile)
         .join(CandidateProfile.searches)

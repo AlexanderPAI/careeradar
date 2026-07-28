@@ -12,6 +12,7 @@ def render_vacancies(
     *,
     profile_id: str,
     csv_filename: str,
+    llm_consent: bool,
 ) -> None:
     dataframe = pd.DataFrame(vacancies)
     with st.expander(f"В зоне интереса — {len(dataframe)} вакансий", expanded=True):
@@ -49,6 +50,7 @@ def render_vacancies(
                         key=f"match_{vacancy['vacancy_id']}_{index}",
                         use_container_width=True,
                         type="primary",
+                        disabled=not llm_consent,
                     ):
                         with st.spinner("Сопоставляем профиль и вакансию…"):
                             try:
@@ -56,6 +58,7 @@ def render_vacancies(
                                     analyze_vacancy(
                                         profile_id,
                                         str(vacancy["vacancy_id"]),
+                                        consent=llm_consent,
                                     )
                                 )
                                 st.session_state["selected_analysis_id"] = analysis_id

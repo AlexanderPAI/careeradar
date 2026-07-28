@@ -94,14 +94,14 @@ async def get_search_vacancies(search_id: str, *, relevant_only: bool) -> list[d
     )
 
 
-async def get_resume_recommendations(profile_id: str) -> str:
+async def get_resume_recommendations(profile_id: str, *, consent: bool) -> str:
     timeout = aiohttp.ClientTimeout(total=300)
     async with aiohttp.ClientSession(
         timeout=timeout, headers=auth_headers()
     ) as session:
         async with session.post(
             f"{BACKEND_URL}/v1/resume_advisor/recommendations",
-            json={"profile_id": profile_id},
+            json={"profile_id": profile_id, "llm_processing_consent": consent},
         ) as response:
             if response.status == 404:
                 raise RuntimeError("Профиль не найден")
@@ -112,14 +112,18 @@ async def get_resume_recommendations(profile_id: str) -> str:
             return (await response.json())["recommendations"]
 
 
-async def analyze_vacancy(profile_id: str, vacancy_id: str) -> str:
+async def analyze_vacancy(profile_id: str, vacancy_id: str, *, consent: bool) -> str:
     timeout = aiohttp.ClientTimeout(total=300)
     async with aiohttp.ClientSession(
         timeout=timeout, headers=auth_headers()
     ) as session:
         async with session.post(
             f"{BACKEND_URL}/v1/vacancy_match/analyze",
-            json={"profile_id": profile_id, "vacancy_id": vacancy_id},
+            json={
+                "profile_id": profile_id,
+                "vacancy_id": vacancy_id,
+                "llm_processing_consent": consent,
+            },
         ) as response:
             if response.status == 503:
                 data = await response.json()
@@ -141,14 +145,20 @@ async def get_vacancy_analysis(analysis_id: str) -> dict | None:
     return _dates(await _get(f"/v1/history/vacancy-analyses/{analysis_id}"))
 
 
-async def repeat_search(search_prompt: str, profile_id: str) -> list[dict]:
+async def repeat_search(
+    search_prompt: str, profile_id: str, *, consent: bool
+) -> list[dict]:
     timeout = aiohttp.ClientTimeout(total=1200)
     async with aiohttp.ClientSession(
         timeout=timeout, headers=auth_headers()
     ) as session:
         async with session.post(
             f"{BACKEND_URL}/v1/searcher/chat",
-            json={"message": search_prompt, "profile_id": profile_id},
+            json={
+                "message": search_prompt,
+                "profile_id": profile_id,
+                "llm_processing_consent": consent,
+            },
         ) as response:
             if response.status != 200:
                 raise RuntimeError(
@@ -156,7 +166,11 @@ async def repeat_search(search_prompt: str, profile_id: str) -> list[dict]:
                 )
             search_id = (await response.json())["search_id"]
         async with session.post(
-            f"{BACKEND_URL}/v1/filter/check", json={"search_id": search_id}
+            f"{BACKEND_URL}/v1/filter/check",
+            json={
+                "search_id": search_id,
+                "llm_processing_consent": consent,
+            },
         ) as response:
             if response.status != 200:
                 raise RuntimeError(
