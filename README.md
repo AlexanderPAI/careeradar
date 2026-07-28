@@ -127,15 +127,20 @@ GIGACHAT_URL=https://api.giga.chat/v1/chat/completions
 GIGACHAT_VERIFY_SSL_CERTS=false
 LLM_PROVIDER=gigachat
 POSTGRES_USER=careeradar
-POSTGRES_PASSWORD=change_me
+POSTGRES_PASSWORD=<случайное значение длиной не менее 20 символов>
 POSTGRES_HOST=db
 POSTGRES_PORT=5432
 POSTGRES_DB=careeradar
-JWT_SECRET=replace_with_a_long_random_secret_at_least_32_chars
+JWT_SECRET=<отдельное случайное значение длиной не менее 48 символов>
 JWT_EXPIRE_MINUTES=480
 ```
 
 `LLM_PROVIDER` принимает `gigachat` или `openrouter`. Значения `OPENROUTER_KEY`, `GIGACHAT_KEY` и `JWT_SECRET` указывайте без кавычек: некоторые способы передачи `.env` в Docker сохраняют кавычки как часть секрета.
+
+Для production сгенерируйте разные значения, например двумя отдельными
+вызовами `openssl rand -base64 48`. Backend до запуска отклоняет известные
+шаблоны (`change_me`, `replace_with...`, демонстрационные секреты), короткие и
+слишком однообразные значения.
 
 ### Доступность провайдеров и источников
 

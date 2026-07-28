@@ -35,7 +35,8 @@ services:
       GIGACHAT_VERIFY_SSL_CERTS: "true"
       GIGACHAT_ROOT_CA_FILE: /run/careeradar/certs/russian_trusted_root_ca.pem
       GIGACHAT_SUB_CA_FILE: /run/careeradar/certs/russian_trusted_sub_ca.pem
-      JWT_SECRET: ${JWT_SECRET:?Add JWT_SECRET with at least 32 characters to .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Add a random POSTGRES_PASSWORD to .env}
+      JWT_SECRET: ${JWT_SECRET:?Add a random JWT_SECRET with at least 48 characters to .env}
       JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-480}
     depends_on:
       db:
@@ -53,7 +54,7 @@ services:
       - .env
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Add a random POSTGRES_PASSWORD to .env}
       POSTGRES_PORT: ${POSTGRES_PORT}
       POSTGRES_DB: ${POSTGRES_DB}
     restart: on-failure
