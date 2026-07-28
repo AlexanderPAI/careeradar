@@ -1,7 +1,9 @@
 import asyncio
 import logging
+import ssl
 import time
 import uuid
+from pathlib import Path
 from typing import Any
 
 import aiohttp
@@ -22,7 +24,8 @@ class GigaChatAdapter:
         *,
         oauth_url: str = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth",
         scope: str = "GIGACHAT_API_PERS",
-        verify_ssl_certs: bool = False,
+        verify_ssl_certs: bool = True,
+        ca_bundle_files: tuple[str, ...] = (),
     ):
         self.gigachat_url = gigachat_url
         self.gigachat_key = gigachat_key
@@ -30,9 +33,23 @@ class GigaChatAdapter:
         self.oauth_url = oauth_url
         self.scope = scope
         self.verify_ssl_certs = verify_ssl_certs
+        self._ssl = self._create_ssl_context(ca_bundle_files)
         self._access_token: str | None = None
         self._token_expires_at = 0.0
         self._token_lock = asyncio.Lock()
+
+    def _create_ssl_context(
+        self, ca_bundle_files: tuple[str, ...]
+    ) -> ssl.SSLContext | bool:
+        if not self.verify_ssl_certs:
+            return False
+        context = ssl.create_default_context()
+        for filename in ca_bundle_files:
+            path = Path(filename)
+            if not path.is_file():
+                raise FileNotFoundError(f"Не найден CA-сертификат GigaChat: {path}")
+            context.load_verify_locations(cafile=str(path))
+        return context
 
     async def _get_access_token(
         self, session: aiohttp.ClientSession, *, force_refresh: bool = False
@@ -54,7 +71,7 @@ class GigaChatAdapter:
 
             async with session.post(
                 self.oauth_url,
-                ssl=self.verify_ssl_certs,
+                ssl=self._ssl,
                 headers={
                     "Authorization": f"Basic {self.gigachat_key}",
                     "RqUID": str(uuid.uuid4()),
@@ -108,7 +125,7 @@ class GigaChatAdapter:
                     token = await self._get_access_token(session)
                     async with session.post(
                         self.gigachat_url,
-                        ssl=self.verify_ssl_certs,
+                        ssl=self._ssl,
                         headers={"Authorization": f"Bearer {token}"},
                         json={"model": self.model, "messages": prompt},
                     ) as response:

@@ -1,10 +1,13 @@
 from typing import Literal
 
-from pydantic import Field, PostgresDsn, field_validator
+from pydantic import Field, PostgresDsn, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    app_env: Literal["development", "test", "production"] = Field(
+        "development", env="APP_ENV"
+    )
     llm_provider: Literal["gigachat", "openrouter"] = Field(
         "gigachat", env="LLM_PROVIDER", description="Default LLM provider"
     )
@@ -23,9 +26,17 @@ class Settings(BaseSettings):
         description="GigaChat chat completions URL",
     )
     gigachat_verify_ssl_certs: bool = Field(
-        False,
+        True,
         env="GIGACHAT_VERIFY_SSL_CERTS",
         description="Verify TLS certificates for GigaChat requests",
+    )
+    gigachat_root_ca_file: str = Field(
+        "backend/certs/russian_trusted_root_ca.pem",
+        env="GIGACHAT_ROOT_CA_FILE",
+    )
+    gigachat_sub_ca_file: str = Field(
+        "backend/certs/russian_trusted_sub_ca.pem",
+        env="GIGACHAT_SUB_CA_FILE",
     )
 
     postgres_user: str = Field(
@@ -61,6 +72,14 @@ class Settings(BaseSettings):
         if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
             value = value[1:-1].strip()
         return value
+
+    @model_validator(mode="after")
+    def reject_insecure_production_tls(self) -> "Settings":
+        if self.app_env == "production" and not self.gigachat_verify_ssl_certs:
+            raise ValueError(
+                "GIGACHAT_VERIFY_SSL_CERTS=false запрещён при APP_ENV=production"
+            )
+        return self
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -24,6 +24,7 @@ services:
     env_file:
       - .env
     environment:
+      APP_ENV: development
       POSTGRES_HOST: db
       JWT_SECRET: ${JWT_SECRET:?Add JWT_SECRET with at least 32 characters to .env}
       JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-480}
