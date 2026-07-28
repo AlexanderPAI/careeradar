@@ -30,6 +30,7 @@ from backend.db.connector import async_session
 from backend.db.repositories import get_search_rows, mark_relevant
 from backend.llm_providers.base import LLMAdapter
 from backend.llm_providers.factory import create_llm_adapter
+from backend.privacy import minimal_profile
 from backend.utils.prompt_loader import load_prompt
 
 logger = logging.getLogger("VACANCY_FILTER")
@@ -88,7 +89,7 @@ class VacancyFilterAgent:
     # Нода 2: фильтруем батчами
     async def filter_vacancies(self, state: State) -> dict:
         all_rows = state["all_rows"]
-        profile = state["user_profile"]
+        profile = minimal_profile(state["user_profile"], purpose="search")
         profile_json = json.dumps(profile, ensure_ascii=False)
 
         logger.info(f"Вакансий для фильтрации: {len(all_rows)}, батч: {BATCH_SIZE}")

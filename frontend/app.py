@@ -31,11 +31,12 @@ st.set_page_config(page_title="КарьеРадар", page_icon="🟣", layout="
 require_auth()
 
 
-async def call_cv_analyzer(file_bytes, filename, content_type):
+async def call_cv_analyzer(file_bytes, filename, content_type, *, consent: bool):
     form_data = aiohttp.FormData()
     form_data.add_field(
         "file", file_bytes, filename=filename, content_type=content_type
     )
+    form_data.add_field("llm_processing_consent", str(consent).lower())
     async with aiohttp.ClientSession(headers=auth_headers()) as session:
         async with session.post(
             CV_ANALYZER_URL, data=form_data, timeout=aiohttp.ClientTimeout(total=1200)
@@ -47,11 +48,15 @@ async def call_cv_analyzer(file_bytes, filename, content_type):
             return await response.json()
 
 
-async def call_searcher(search_prompt: str, profile_id: str) -> str:
+async def call_searcher(search_prompt: str, profile_id: str, *, consent: bool) -> str:
     async with aiohttp.ClientSession(headers=auth_headers()) as session:
         async with session.post(
             SEARCHER_URL,
-            json={"message": search_prompt, "profile_id": profile_id},
+            json={
+                "message": search_prompt,
+                "profile_id": profile_id,
+                "llm_processing_consent": consent,
+            },
             timeout=aiohttp.ClientTimeout(total=1200),
         ) as response:
             if response.status != 200:
@@ -61,11 +66,11 @@ async def call_searcher(search_prompt: str, profile_id: str) -> str:
             return (await response.json())["search_id"]
 
 
-async def call_filter(search_id: str) -> list[dict]:
+async def call_filter(search_id: str, *, consent: bool) -> list[dict]:
     async with aiohttp.ClientSession(headers=auth_headers()) as session:
         async with session.post(
             FILTER_URL,
-            json={"search_id": search_id},
+            json={"search_id": search_id, "llm_processing_consent": consent},
             timeout=aiohttp.ClientTimeout(total=1200),
         ) as response:
             if response.status != 200:
@@ -114,8 +119,27 @@ uploaded_file = st.file_uploader(
     label_visibility="collapsed",
 )
 
+with st.expander("Как обрабатываются данные резюме"):
+    st.markdown(
+        """
+Для анализа обезличенный и сокращённый текст будет передан внешнему поставщику
+LLM, выбранному владельцем сервиса. Перед отправкой удаляются контактные данные,
+ссылки, паспортные идентификаторы и поле имени; объём текста ограничивается.
+Данные используются только для построения карьерного профиля и рекомендаций.
+Исходный файл поставщику LLM не передаётся.
+"""
+    )
+
+llm_consent = st.checkbox(
+    "Я согласен на описанную обработку обезличенных данных внешней LLM",
+    key="home_llm_consent",
+)
+
 if uploaded_file is not None and st.button(
-    "Анализировать резюме", type="primary", use_container_width=True
+    "Анализировать резюме",
+    type="primary",
+    use_container_width=True,
+    disabled=not llm_consent,
 ):
     st.session_state.pop("api_response", None)
     st.session_state.pop("vacancies", None)
@@ -123,7 +147,10 @@ if uploaded_file is not None and st.button(
         try:
             st.session_state["api_response"] = asyncio.run(
                 call_cv_analyzer(
-                    uploaded_file.getvalue(), uploaded_file.name, uploaded_file.type
+                    uploaded_file.getvalue(),
+                    uploaded_file.name,
+                    uploaded_file.type,
+                    consent=llm_consent,
                 )
             )
             st.session_state["vacancies"] = None
@@ -148,13 +175,22 @@ if "api_response" in st.session_state:
     )
     st.markdown(template("cards_row.html", cards=cards), unsafe_allow_html=True)
 
-    if st.button("Сканировать рынок", type="primary", use_container_width=True):
+    if st.button(
+        "Сканировать рынок",
+        type="primary",
+        use_container_width=True,
+        disabled=not llm_consent,
+    ):
         with st.spinner("КарьеРадар сканирует рынок…"):
             try:
                 search_id = asyncio.run(
-                    call_searcher(search_prompt, api_response.get("profile_id"))
+                    call_searcher(
+                        search_prompt,
+                        api_response.get("profile_id"),
+                        consent=llm_consent,
+                    )
                 )
-                asyncio.run(call_filter(search_id))
+                asyncio.run(call_filter(search_id, consent=llm_consent))
                 st.session_state["vacancies"] = asyncio.run(
                     get_search_vacancies(search_id, relevant_only=True)
                 )
@@ -173,4 +209,5 @@ if st.session_state.get("vacancies") is not None:
         st.session_state["vacancies"],
         profile_id=str(st.session_state["api_response"]["profile_id"]),
         csv_filename="vacancies.csv",
+        llm_consent=llm_consent,
     )

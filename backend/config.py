@@ -3,8 +3,67 @@ from typing import Literal
 from pydantic import Field, PostgresDsn, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+_PLACEHOLDER_MARKERS = (
+    "changeme",
+    "replacewith",
+    "placeholder",
+    "example",
+    "demosecret",
+    "defaultsecret",
+    "yourjwtsecret",
+)
+_KNOWN_WEAK_SECRETS = {
+    "password",
+    "postgres",
+    "careeradar",
+    "secret",
+    "jwtsecret",
+    "testsecret",
+}
+
+
+def _normalized_secret(value: str) -> str:
+    return "".join(character for character in value.lower() if character.isalnum())
+
+
+def _is_repeated_pattern(value: str) -> bool:
+    for pattern_length in range(1, len(value) // 2 + 1):
+        if len(value) % pattern_length == 0:
+            pattern = value[:pattern_length]
+            if pattern * (len(value) // pattern_length) == value:
+                return True
+    return False
+
+
+def _validate_production_secret(
+    name: str,
+    value: str,
+    *,
+    minimum_length: int,
+    minimum_unique_characters: int,
+) -> None:
+    normalized = _normalized_secret(value)
+    if (
+        len(value) < minimum_length
+        or len(set(value)) < minimum_unique_characters
+        or _is_repeated_pattern(value)
+        or normalized in _KNOWN_WEAK_SECRETS
+        or any(marker in normalized for marker in _PLACEHOLDER_MARKERS)
+    ):
+        raise ValueError(
+            f"{name} небезопасен для production: используйте случайное значение "
+            f"длиной не менее {minimum_length} символов"
+        )
+
 
 class Settings(BaseSettings):
+    def __init__(self, **values: object) -> None:
+        super().__init__(**values)
+        self._validate_production_security()
+
+    app_env: Literal["development", "test", "production"] = Field(
+        "development", env="APP_ENV"
+    )
     llm_provider: Literal["gigachat", "openrouter"] = Field(
         "gigachat", env="LLM_PROVIDER", description="Default LLM provider"
     )
@@ -23,9 +82,17 @@ class Settings(BaseSettings):
         description="GigaChat chat completions URL",
     )
     gigachat_verify_ssl_certs: bool = Field(
-        False,
+        True,
         env="GIGACHAT_VERIFY_SSL_CERTS",
         description="Verify TLS certificates for GigaChat requests",
+    )
+    gigachat_root_ca_file: str = Field(
+        "backend/certs/russian_trusted_root_ca.pem",
+        env="GIGACHAT_ROOT_CA_FILE",
+    )
+    gigachat_sub_ca_file: str = Field(
+        "backend/certs/russian_trusted_sub_ca.pem",
+        env="GIGACHAT_SUB_CA_FILE",
     )
 
     postgres_user: str = Field(
@@ -43,13 +110,23 @@ class Settings(BaseSettings):
     )
     jwt_secret: str = Field(..., min_length=32, env="JWT_SECRET")
     jwt_expire_minutes: int = Field(480, env="JWT_EXPIRE_MINUTES")
+    resume_retention_days: int = Field(30, ge=1, env="RESUME_RETENTION_DAYS")
+    resume_cleanup_interval_minutes: int = Field(
+        60, ge=1, env="RESUME_CLEANUP_INTERVAL_MINUTES"
+    )
 
     @field_validator("llm_provider", mode="before")
     @classmethod
     def normalize_llm_provider(cls, value: str) -> str:
         return str(value).strip().lower()
 
-    @field_validator("openrouter_key", "gigachat_key", "jwt_secret", mode="before")
+    @field_validator(
+        "openrouter_key",
+        "gigachat_key",
+        "jwt_secret",
+        "postgres_password",
+        mode="before",
+    )
     @classmethod
     def strip_secret_quotes(cls, value: str) -> str:
         """Docker env files may preserve quotes as part of a secret value."""
@@ -57,6 +134,44 @@ class Settings(BaseSettings):
         if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
             value = value[1:-1].strip()
         return value
+
+    def _validate_production_security(self) -> None:
+        if self.app_env != "production":
+            return
+        if not self.gigachat_verify_ssl_certs:
+            raise ValueError(
+                "GIGACHAT_VERIFY_SSL_CERTS=false запрещён при APP_ENV=production"
+            )
+        _validate_production_secret(
+            "JWT_SECRET",
+            self.jwt_secret,
+            minimum_length=48,
+            minimum_unique_characters=12,
+        )
+        _validate_production_secret(
+            "POSTGRES_PASSWORD",
+            self.postgres_password,
+            minimum_length=20,
+            minimum_unique_characters=10,
+        )
+        if self.postgres_password == self.jwt_secret:
+            raise ValueError(
+                "JWT_SECRET и POSTGRES_PASSWORD должны быть разными значениями"
+            )
+        provider_key = (
+            self.gigachat_key
+            if self.llm_provider == "gigachat"
+            else self.openrouter_key
+        )
+        normalized_key = _normalized_secret(provider_key)
+        if (
+            len(provider_key) < 16
+            or not normalized_key
+            or normalized_key.startswith(("your", "replacewith", "changeme"))
+        ):
+            raise ValueError(
+                f"Ключ провайдера {self.llm_provider} не задан или является шаблоном"
+            )
 
     model_config = SettingsConfigDict(
         env_file=".env",

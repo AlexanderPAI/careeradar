@@ -1,7 +1,9 @@
 import asyncio
 import logging
+import ssl
 import time
 import uuid
+from pathlib import Path
 from typing import Any
 
 import aiohttp
@@ -22,7 +24,8 @@ class GigaChatAdapter:
         *,
         oauth_url: str = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth",
         scope: str = "GIGACHAT_API_PERS",
-        verify_ssl_certs: bool = False,
+        verify_ssl_certs: bool = True,
+        ca_bundle_files: tuple[str, ...] = (),
     ):
         self.gigachat_url = gigachat_url
         self.gigachat_key = gigachat_key
@@ -30,9 +33,23 @@ class GigaChatAdapter:
         self.oauth_url = oauth_url
         self.scope = scope
         self.verify_ssl_certs = verify_ssl_certs
+        self._ssl = self._create_ssl_context(ca_bundle_files)
         self._access_token: str | None = None
         self._token_expires_at = 0.0
         self._token_lock = asyncio.Lock()
+
+    def _create_ssl_context(
+        self, ca_bundle_files: tuple[str, ...]
+    ) -> ssl.SSLContext | bool:
+        if not self.verify_ssl_certs:
+            return False
+        context = ssl.create_default_context()
+        for filename in ca_bundle_files:
+            path = Path(filename)
+            if not path.is_file():
+                raise FileNotFoundError(f"Не найден CA-сертификат GigaChat: {path}")
+            context.load_verify_locations(cafile=str(path))
+        return context
 
     async def _get_access_token(
         self, session: aiohttp.ClientSession, *, force_refresh: bool = False
@@ -54,7 +71,7 @@ class GigaChatAdapter:
 
             async with session.post(
                 self.oauth_url,
-                ssl=self.verify_ssl_certs,
+                ssl=self._ssl,
                 headers={
                     "Authorization": f"Basic {self.gigachat_key}",
                     "RqUID": str(uuid.uuid4()),
@@ -97,6 +114,8 @@ class GigaChatAdapter:
 
     async def chat(self, prompt: list[dict[str, str]]) -> dict[str, Any]:
         """Send prompt to GigaChat and return its OpenAI-compatible response."""
+        operation_id = uuid.uuid4().hex
+        started_at = time.monotonic()
         timeout = aiohttp.ClientTimeout(total=300, connect=30, sock_read=240)
         last_error: Exception | None = None
 
@@ -106,7 +125,7 @@ class GigaChatAdapter:
                     token = await self._get_access_token(session)
                     async with session.post(
                         self.gigachat_url,
-                        ssl=self.verify_ssl_certs,
+                        ssl=self._ssl,
                         headers={"Authorization": f"Bearer {token}"},
                         json={"model": self.model, "messages": prompt},
                     ) as response:
@@ -119,11 +138,17 @@ class GigaChatAdapter:
                             )
                         if response.status >= 400:
                             error = LLMProviderError(
-                                f"GigaChat вернул HTTP {response.status}: "
-                                f"{self._error_message(payload)}"
+                                f"GigaChat вернул HTTP {response.status} "
+                                f"(operation_id={operation_id})"
                             )
                             if 400 <= response.status < 500:
-                                logger.error("%s", error)
+                                logger.error(
+                                    "operation_id=%s provider=gigachat status=failed "
+                                    "http_status=%d attempt=%d",
+                                    operation_id,
+                                    response.status,
+                                    attempt + 1,
+                                )
                                 raise error from None
                             raise error
 
@@ -136,6 +161,13 @@ class GigaChatAdapter:
                                 "GigaChat вернул пустой ответ "
                                 f"(finish_reason={finish_reason})"
                             )
+                        logger.info(
+                            "operation_id=%s provider=gigachat status=completed "
+                            "attempt=%d duration_ms=%d",
+                            operation_id,
+                            attempt + 1,
+                            (time.monotonic() - started_at) * 1000,
+                        )
                         return payload
             except (
                 TimeoutError,
@@ -148,8 +180,15 @@ class GigaChatAdapter:
                 if attempt == 0:
                     await asyncio.sleep(1)
 
-        detail = str(last_error) if last_error else "неизвестная ошибка"
-        logger.error("GigaChat request failed: %s", detail)
+        logger.error(
+            "operation_id=%s provider=gigachat status=failed attempts=%d "
+            "duration_ms=%d error_type=%s",
+            operation_id,
+            attempt + 1,
+            (time.monotonic() - started_at) * 1000,
+            type(last_error).__name__ if last_error else "unknown",
+        )
         raise LLMProviderError(
-            f"GigaChat не дал корректный ответ после двух попыток: {detail}"
+            "GigaChat не дал корректный ответ после двух попыток "
+            f"(operation_id={operation_id})"
         ) from last_error

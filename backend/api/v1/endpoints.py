@@ -1,10 +1,8 @@
-import shutil
 import uuid
-from pathlib import Path
 from urllib.parse import urlparse
 
 import aiohttp
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from playwright.async_api import Error as PlaywrightError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,14 +25,12 @@ from backend.db.repositories import (
     save_vacancy_analysis,
 )
 from backend.llm_providers.base import LLMProviderError
+from backend.privacy import anonymize_text, require_llm_consent
+from backend.resume_storage import expires_at, save_upload
 from backend.security import get_current_user
 from backend.utils.parser import CareerHabrParser, HHParser
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(get_current_user)])
-
-# вынести в конфиги
-UPLOAD_DIR = Path("backend/storage/cv")
-UPLOAD_DIR.mkdir(exist_ok=True)
 
 ALLOWED_TYPES = {
     "application/pdf": ".pdf",
@@ -60,9 +56,7 @@ async def upload_cv(file: UploadFile = File(...)):
         )
     extension = ALLOWED_TYPES[file.content_type]
     save_filename = f"{uuid.uuid4()}{extension}"
-    file_path = UPLOAD_DIR / save_filename
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    file_path = save_upload(file, save_filename)
 
     return {
         "original_filename": file.filename,
@@ -75,9 +69,11 @@ async def upload_cv(file: UploadFile = File(...)):
 @router.post("/cv_analyzer/send_cv")
 async def cv_analyzer(
     file: UploadFile = File(...),
+    llm_processing_consent: bool = Form(False),
     session: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
+    require_llm_consent(llm_processing_consent)
     if file.content_type not in ALLOWED_TYPES:
         raise HTTPException(
             status_code=400,
@@ -85,22 +81,26 @@ async def cv_analyzer(
         )
     extension = ALLOWED_TYPES[file.content_type]
     save_filename = f"{uuid.uuid4()}{extension}"
-    file_path = UPLOAD_DIR / save_filename
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    file_path = save_upload(file, save_filename)
 
     try:
         search_prompt, user_profile, state = await cv_analyzer_agent.run(str(file_path))
+        profile = await create_profile(
+            session,
+            user_profile,
+            user_id=user.id,
+            search_prompt=search_prompt,
+            source_filename=file.filename,
+            source_path=str(file_path),
+            cv_text=state.get("cv_text"),
+            resume_expires_at=expires_at(),
+        )
     except LLMProviderError as exc:
+        file_path.unlink(missing_ok=True)
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    profile = await create_profile(
-        session,
-        user_profile,
-        user_id=user.id,
-        search_prompt=search_prompt,
-        source_filename=file.filename,
-        cv_text=state.get("cv_text"),
-    )
+    except BaseException:
+        file_path.unlink(missing_ok=True)
+        raise
 
     return {
         "search_prompt": search_prompt,
@@ -115,6 +115,7 @@ async def resume_recommendations(
     session: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
+    require_llm_consent(request.llm_processing_consent)
     profile = await session.scalar(
         select(CandidateProfile).where(
             CandidateProfile.id == request.profile_id,
@@ -150,6 +151,7 @@ async def analyze_vacancy_match(
     session: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
+    require_llm_consent(request.llm_processing_consent)
     profile = await session.scalar(
         select(CandidateProfile).where(
             CandidateProfile.id == request.profile_id,
@@ -220,6 +222,7 @@ async def searcher_chat(
     session: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
+    require_llm_consent(searcher_request.llm_processing_consent)
     if searcher_request.profile_id is not None:
         profile = await session.scalar(
             select(CandidateProfile).where(
@@ -230,7 +233,7 @@ async def searcher_chat(
         if profile is None:
             raise HTTPException(status_code=404, detail="Profile not found")
     search_id = await search_agent.run(
-        searcher_request.message,
+        anonymize_text(searcher_request.message),
         str(searcher_request.profile_id) if searcher_request.profile_id else None,
         str(user.id),
     )
@@ -243,6 +246,7 @@ async def filter_check(
     session: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
+    require_llm_consent(request.llm_processing_consent)
     profile = await session.scalar(
         select(CandidateProfile)
         .join(CandidateProfile.searches)

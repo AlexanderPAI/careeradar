@@ -1,6 +1,7 @@
 import asyncio
 import logging
-import pprint
+import time
+import uuid
 from typing import Any
 
 import aiohttp
@@ -24,6 +25,8 @@ class OpenRouterAdapter:
 
     async def chat(self, prompt: list[dict[str, str]]) -> dict[str, Any]:
         """Send prompt to LLM"""
+        operation_id = uuid.uuid4().hex
+        started_at = time.monotonic()
         timeout = aiohttp.ClientTimeout(total=300, connect=30, sock_read=240)
         last_error: Exception | None = None
 
@@ -37,14 +40,20 @@ class OpenRouterAdapter:
                     ) as response:
                         payload = await response.json(content_type=None)
                         if response.status >= 400:
-                            message = payload.get("error", {}).get("message", payload)
                             error = LLMProviderError(
-                                f"OpenRouter вернул HTTP {response.status}: {message}"
+                                f"OpenRouter вернул HTTP {response.status} "
+                                f"(operation_id={operation_id})"
                             )
                             # Authentication, balance and request errors do not benefit
                             # from an immediate retry with identical parameters.
                             if 400 <= response.status < 500:
-                                logger.error("%s", error)
+                                logger.error(
+                                    "operation_id=%s provider=openrouter status=failed "
+                                    "http_status=%d attempt=%d",
+                                    operation_id,
+                                    response.status,
+                                    attempt + 1,
+                                )
                                 raise error from None
                             raise error
                         choices = payload.get("choices") or []
@@ -56,6 +65,13 @@ class OpenRouterAdapter:
                                 "OpenRouter вернул пустой ответ "
                                 f"(finish_reason={finish_reason})"
                             )
+                        logger.info(
+                            "operation_id=%s provider=openrouter status=completed "
+                            "attempt=%d duration_ms=%d",
+                            operation_id,
+                            attempt + 1,
+                            (time.monotonic() - started_at) * 1000,
+                        )
                         return payload
             except (
                 TimeoutError,
@@ -68,10 +84,17 @@ class OpenRouterAdapter:
                 if attempt == 0:
                     await asyncio.sleep(1)
 
-        detail = str(last_error) if last_error else "неизвестная ошибка"
-        logger.error("OpenRouter request failed: %s", detail)
+        logger.error(
+            "operation_id=%s provider=openrouter status=failed attempts=%d "
+            "duration_ms=%d error_type=%s",
+            operation_id,
+            attempt + 1,
+            (time.monotonic() - started_at) * 1000,
+            type(last_error).__name__ if last_error else "unknown",
+        )
         raise LLMProviderError(
-            f"OpenRouter не дал корректный ответ после двух попыток: {detail}"
+            "OpenRouter не дал корректный ответ после двух попыток "
+            f"(operation_id={operation_id})"
         ) from last_error
 
 
@@ -84,8 +107,7 @@ llm = OpenRouterAdapter(
 
 async def main() -> None:
     prompt = [{"role": "user", "content": "Расскажи, что ты умеешь?"}]
-    response = await llm.chat(prompt=prompt)
-    pprint.pprint(response)
+    await llm.chat(prompt=prompt)
 
 
 if __name__ == "__main__":

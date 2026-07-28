@@ -12,6 +12,10 @@ def create_llm_adapter() -> LLMAdapter:
             gigachat_key=cfg.gigachat_key,
             model=cfg.gigachat_model,
             verify_ssl_certs=cfg.gigachat_verify_ssl_certs,
+            ca_bundle_files=(
+                cfg.gigachat_root_ca_file,
+                cfg.gigachat_sub_ca_file,
+            ),
         )
 
     return OpenRouterAdapter(

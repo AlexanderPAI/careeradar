@@ -84,7 +84,9 @@ async def create_profile(
     *,
     search_prompt: str | None = None,
     source_filename: str | None = None,
+    source_path: str | None = None,
     cv_text: str | None = None,
+    resume_expires_at: datetime | None = None,
 ) -> CandidateProfile:
     normalized = normalize_profile(data)
     profile = CandidateProfile(
@@ -92,7 +94,9 @@ async def create_profile(
         user_id=uuid.UUID(str(user_id)),
         search_prompt=search_prompt,
         source_filename=source_filename,
+        source_path=source_path,
         cv_text=cv_text,
+        resume_expires_at=resume_expires_at,
         raw_data=data,
     )
     session.add(profile)

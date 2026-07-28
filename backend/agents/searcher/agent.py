@@ -18,6 +18,8 @@ import asyncio
 import json
 import logging
 import re
+import time
+import uuid
 from pathlib import Path
 from typing import Annotated, List, Optional, TypedDict
 
@@ -53,6 +55,7 @@ class State(TypedDict):
     user_id: str
     search_id: str
     final_answer: str
+    operation_id: str
 
 
 class Agent:
@@ -91,6 +94,7 @@ class Agent:
     # Нода 2: разбираем, что указал пользователь
 
     async def parse_user_input(self, state: State) -> dict:
+        started_at = time.monotonic()
         user_text = ""
         for message in reversed(state["messages"]):
             if isinstance(message, HumanMessage):
@@ -118,6 +122,14 @@ class Agent:
         area = parsed.get("area", 1)
         max_pages = parsed.get("max_pages", 3)
         filters = parsed.get("filters", {})
+        logger.info(
+            "operation_id=%s stage=parse_search_request status=completed "
+            "queries=%d active_filters=%d duration_ms=%d",
+            state["operation_id"],
+            len(search_queries),
+            sum(value is not None for value in filters.values()),
+            (time.monotonic() - started_at) * 1000,
+        )
 
         return {
             "search_queries": search_queries,
@@ -145,6 +157,7 @@ class Agent:
 
     # Нода 3: запукаем тулу парсера
     async def run_parser_node(self, state: State) -> dict:
+        started_at = time.monotonic()
         parser_payload = {
             "search_queries": state["search_queries"],
             "filters": state.get("filters") or {},
@@ -172,6 +185,14 @@ class Agent:
                 max_pages=state.get("max_pages", 1),
                 rows=rows,
             )
+        logger.info(
+            "operation_id=%s stage=vacancy_search status=completed search_id=%s "
+            "vacancies=%d duration_ms=%d",
+            state["operation_id"],
+            search.id,
+            len(rows),
+            (time.monotonic() - started_at) * 1000,
+        )
 
         return {
             "search_id": str(search.id),
@@ -236,6 +257,11 @@ class Agent:
         return workflow.compile()
 
     async def run(self, message: str, profile_id: str | None, user_id: str) -> str:
+        operation_id = uuid.uuid4().hex
+        started_at = time.monotonic()
+        logger.info(
+            "operation_id=%s operation=vacancy_search status=started", operation_id
+        )
         initial_state: State = {
             "messages": [HumanMessage(content=message)],
             "greeted": True,
@@ -248,13 +274,27 @@ class Agent:
             "user_id": user_id,
             "search_id": "",
             "final_answer": "",
+            "operation_id": operation_id,
         }
 
-        result_state = await self.graph.ainvoke(initial_state)
+        try:
+            result_state = await self.graph.ainvoke(initial_state)
+        except Exception:
+            logger.error(
+                "operation_id=%s operation=vacancy_search status=failed", operation_id
+            )
+            raise
 
         search_id = result_state.get("search_id", "")
         if not search_id:
             raise RuntimeError("Parser did not return search_id")
+        logger.info(
+            "operation_id=%s operation=vacancy_search status=completed "
+            "search_id=%s duration_ms=%d",
+            operation_id,
+            search_id,
+            (time.monotonic() - started_at) * 1000,
+        )
         return search_id
 
 
