@@ -45,7 +45,11 @@ class CandidateProfile(Base):
     summary: Mapped[str | None] = mapped_column(Text)
     search_prompt: Mapped[str | None] = mapped_column(Text)
     source_filename: Mapped[str | None] = mapped_column(String(512))
+    source_path: Mapped[str | None] = mapped_column(String(1024))
     cv_text: Mapped[str | None] = mapped_column(Text)
+    resume_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), index=True
+    )
     raw_data: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -71,7 +75,7 @@ class SearchRun(Base):
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     profile_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("candidate_profiles.id", ondelete="SET NULL"), index=True
+        ForeignKey("candidate_profiles.id", ondelete="CASCADE"), index=True
     )
     prompt: Mapped[str] = mapped_column(Text)
     queries: Mapped[list[str]] = mapped_column(JSONB, default=list)

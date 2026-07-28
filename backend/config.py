@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     )
     jwt_secret: str = Field(..., min_length=32, env="JWT_SECRET")
     jwt_expire_minutes: int = Field(480, env="JWT_EXPIRE_MINUTES")
+    resume_retention_days: int = Field(30, ge=1, env="RESUME_RETENTION_DAYS")
+    resume_cleanup_interval_minutes: int = Field(
+        60, ge=1, env="RESUME_CLEANUP_INTERVAL_MINUTES"
+    )
 
     @field_validator("llm_provider", mode="before")
     @classmethod

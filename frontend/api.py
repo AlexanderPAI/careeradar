@@ -42,7 +42,13 @@ async def _get(path: str, **params):
 def _dates(item: dict | None) -> dict | None:
     if item is None:
         return None
-    for key in ("created_at", "updated_at", "last_search_at", "filtered_at"):
+    for key in (
+        "created_at",
+        "updated_at",
+        "last_search_at",
+        "filtered_at",
+        "resume_expires_at",
+    ):
         if item.get(key) and isinstance(item[key], str):
             item[key] = datetime.fromisoformat(item[key])
     return item
@@ -63,6 +69,19 @@ async def get_profile(
         _dates(data["latest_search"]),
         _dates(data["latest_recommendation"]),
     )
+
+
+async def delete_profile(profile_id: str) -> None:
+    async with aiohttp.ClientSession(headers=auth_headers()) as session:
+        async with session.delete(
+            f"{BACKEND_URL}/v1/history/profiles/{profile_id}"
+        ) as response:
+            if response.status == 404:
+                raise RuntimeError("Профиль не найден")
+            if response.status != 204:
+                raise RuntimeError(
+                    f"Ошибка удаления {response.status}: {await response.text()}"
+                )
 
 
 async def get_search_vacancies(search_id: str, *, relevant_only: bool) -> list[dict]:

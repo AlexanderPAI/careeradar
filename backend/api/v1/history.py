@@ -14,6 +14,7 @@ from backend.db.models import (
     User,
     VacancyAnalysis,
 )
+from backend.resume_storage import delete_resume_file
 from backend.security import get_current_user
 
 router = APIRouter(prefix="/v1/history", tags=["history"])
@@ -37,6 +38,7 @@ def _profile_data(profile: CandidateProfile) -> dict:
         "summary",
         "search_prompt",
         "source_filename",
+        "resume_expires_at",
         "created_at",
         "updated_at",
     )
@@ -136,6 +138,26 @@ async def profile_detail(
             else None
         ),
     }
+
+
+@router.delete("/profiles/{profile_id}", status_code=204)
+async def delete_profile(
+    profile_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    profile = await session.scalar(
+        select(CandidateProfile).where(
+            CandidateProfile.id == profile_id,
+            CandidateProfile.user_id == user.id,
+        )
+    )
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    source_path = profile.source_path
+    delete_resume_file(source_path)
+    await session.delete(profile)
+    await session.commit()
 
 
 @router.get("/searches/{search_id}/vacancies")

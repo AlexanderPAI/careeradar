@@ -7,6 +7,7 @@ import aiohttp
 import streamlit as st
 
 from frontend.api import (
+    delete_profile,
     get_profile,
     get_resume_recommendations,
     get_search_vacancies,
@@ -137,6 +138,14 @@ cards = (
 )
 st.markdown(template("cards_row.html", cards=cards), unsafe_allow_html=True)
 
+if profile.get("resume_expires_at"):
+    st.caption(
+        "Исходный файл и извлечённый текст резюме будут автоматически удалены "
+        f"{format_datetime(profile['resume_expires_at'])}."
+    )
+else:
+    st.caption("Исходный файл и извлечённый текст резюме уже удалены.")
+
 recommendations_key = f"resume_recommendations_{profile_id}"
 if latest_recommendation is not None:
     st.session_state[recommendations_key] = latest_recommendation["content"]
@@ -176,6 +185,28 @@ if st.button(
 
 if repeat_disabled:
     st.caption("Недостаточно данных профиля для формирования поискового запроса.")
+
+with st.expander("Удаление профиля"):
+    st.warning(
+        "Профиль, исходное резюме, подборы, рекомендации и анализы будут удалены "
+        "без возможности восстановления."
+    )
+    confirm_delete = st.checkbox(
+        "Я понимаю, что данные будут удалены",
+        key=f"confirm_delete_{profile_id}",
+    )
+    if st.button(
+        "Удалить профиль и все данные",
+        disabled=not confirm_delete,
+        use_container_width=True,
+    ):
+        try:
+            asyncio.run(delete_profile(profile_id))
+            st.session_state.pop("selected_profile_id", None)
+            st.session_state.pop(recommendations_key, None)
+            st.switch_page("pages/profiles.py")
+        except (aiohttp.ClientConnectorError, RuntimeError) as error:
+            st.error(f"Не удалось удалить профиль: {error}")
 
 if latest_search:
     try:
