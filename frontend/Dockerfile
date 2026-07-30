@@ -17,4 +17,5 @@ ENV PYTHONPATH=/app
 FROM base AS proj
 
 COPY /frontend ./frontend
+COPY /shared ./shared
 CMD ["streamlit", "run", "/app/frontend/app.py", "--server.port=8501", "--server.address=0.0.0.0"]

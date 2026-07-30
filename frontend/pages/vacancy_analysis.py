@@ -8,6 +8,7 @@ import streamlit as st
 from frontend.api import get_vacancy_analysis
 from frontend.auth import render_account_sidebar, require_auth
 from frontend.ui import inject_theme, render_brand, template
+from shared.vacancy_urls import safe_vacancy_url
 
 MOSCOW = ZoneInfo("Europe/Moscow")
 
@@ -127,12 +128,16 @@ with right:
         if skills:
             st.caption("Ключевые навыки")
             st.write(", ".join(skills))
-        st.link_button(
-            "Открыть оригинал ↗",
-            vacancy.get("link") or "#",
-            use_container_width=True,
-            type="primary",
-        )
+        display_url = safe_vacancy_url(vacancy.get("link"))
+        if display_url:
+            st.link_button(
+                "Открыть оригинал ↗",
+                display_url,
+                use_container_width=True,
+                type="primary",
+            )
+        else:
+            st.caption("Ссылка на оригинал недоступна")
 
 with st.expander("Полное описание вакансии"):
     st.markdown(

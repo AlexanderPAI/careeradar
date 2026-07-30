@@ -16,6 +16,7 @@ from backend.db.models import (
 )
 from backend.resume_storage import delete_resume_file
 from backend.security import get_current_user
+from shared.vacancy_urls import safe_vacancy_url
 
 router = APIRouter(prefix="/v1/history", tags=["history"])
 
@@ -183,7 +184,7 @@ async def search_vacancies(
             "city": result.vacancy.city,
             "schedule": result.vacancy.schedule,
             "experience": result.vacancy.experience,
-            "link": result.vacancy.external_url,
+            "link": safe_vacancy_url(result.vacancy.external_url),
             "source": result.vacancy.source,
             "query": result.query,
         }
@@ -241,12 +242,14 @@ async def vacancy_analysis_detail(
             CandidateProfile.user_id == user.id,
         )
     )
+    vacancy_snapshot = dict(analysis.vacancy_snapshot)
+    vacancy_snapshot["link"] = safe_vacancy_url(vacancy_snapshot.get("link"))
     return {
         "id": analysis.id,
         "profile_id": analysis.profile_id,
         "profile_name": profile.name if profile else "—",
         "vacancy_id": analysis.vacancy_id,
-        "vacancy": analysis.vacancy_snapshot,
+        "vacancy": vacancy_snapshot,
         "result": analysis.result,
         "created_at": analysis.created_at,
     }

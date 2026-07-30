@@ -17,5 +17,6 @@ RUN python -m playwright install --with-deps chromium
 FROM base AS proj
 
 COPY /backend ./backend
+COPY /shared ./shared
 
 CMD ["sh", "backend/entrypoint.sh"]

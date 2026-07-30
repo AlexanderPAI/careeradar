@@ -1,5 +1,4 @@
 import uuid
-from urllib.parse import urlparse
 
 import aiohttp
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -29,6 +28,7 @@ from backend.privacy import anonymize_text, require_llm_consent
 from backend.resume_storage import expires_at, save_upload
 from backend.security import get_current_user
 from backend.utils.parser import CareerHabrParser, HHParser
+from shared.vacancy_urls import validate_vacancy_url
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(get_current_user)])
 
@@ -174,19 +174,14 @@ async def analyze_vacancy_match(
 
     profile_id = profile.id
     vacancy_id = vacancy.id
-    vacancy_url = vacancy.external_url
-    vacancy_host = (urlparse(vacancy_url).hostname or "").lower()
     try:
-        if vacancy_host == "career.habr.com":
-            vacancy_data = await habr_parser.parse_vacancy(vacancy_url)
-        elif vacancy_host == "hh.ru" or vacancy_host.endswith(".hh.ru"):
-            vacancy_data = await hh_parser.parse_vacancy(vacancy_url)
-        elif vacancy.source == "habr":
-            vacancy_data = await habr_parser.parse_vacancy(vacancy_url)
-        elif vacancy.source == "hh":
-            vacancy_data = await hh_parser.parse_vacancy(vacancy_url)
+        validated_url = validate_vacancy_url(vacancy.external_url)
+        if validated_url.source == "habr":
+            vacancy_data = await habr_parser.parse_vacancy(validated_url.url)
+        elif validated_url.source == "hh":
+            vacancy_data = await hh_parser.parse_vacancy(validated_url.url)
         else:
-            raise ValueError(f"Неподдерживаемый домен вакансии: {vacancy_host}")
+            raise ValueError("Неподдерживаемый источник вакансии")
     except (aiohttp.ClientError, PlaywrightError, TimeoutError, ValueError) as exc:
         raise HTTPException(
             status_code=503,

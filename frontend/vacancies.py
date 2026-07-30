@@ -5,6 +5,7 @@ import pandas as pd
 import streamlit as st
 
 from frontend.api import analyze_vacancy
+from shared.vacancy_urls import safe_vacancy_url
 
 
 def render_vacancies(
@@ -14,7 +15,11 @@ def render_vacancies(
     csv_filename: str,
     llm_consent: bool,
 ) -> None:
-    dataframe = pd.DataFrame(vacancies)
+    export_rows = [
+        {**vacancy, "link": safe_vacancy_url(vacancy.get("link")) or ""}
+        for vacancy in vacancies
+    ]
+    dataframe = pd.DataFrame(export_rows)
     with st.expander(f"В зоне интереса — {len(dataframe)} вакансий", expanded=True):
         if dataframe.empty:
             st.info("В последнем подборе нет подходящих вакансий.")
@@ -39,11 +44,15 @@ def render_vacancies(
                         )
                     )
                 with links:
-                    st.link_button(
-                        "Вакансия ↗",
-                        vacancy["link"],
-                        use_container_width=True,
-                    )
+                    display_url = safe_vacancy_url(vacancy.get("link"))
+                    if display_url:
+                        st.link_button(
+                            "Вакансия ↗",
+                            display_url,
+                            use_container_width=True,
+                        )
+                    else:
+                        st.caption("Ссылка недоступна")
                 with action:
                     if st.button(
                         "Проверить соответствие",

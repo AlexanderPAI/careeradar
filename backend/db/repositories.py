@@ -1,8 +1,8 @@
+import logging
 import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any
-from urllib.parse import urlparse
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +16,9 @@ from backend.db.models import (
     Vacancy,
     VacancyAnalysis,
 )
+from shared.vacancy_urls import safe_vacancy_url, validate_vacancy_url
+
+logger = logging.getLogger("VACANCY_STORAGE")
 
 
 def _string_list(value: Any) -> list[str]:
@@ -64,17 +67,6 @@ def normalize_profile(data: dict[str, Any]) -> dict[str, Any]:
         "education": _string_list(data.get("education")),
         "summary": data.get("summary"),
     }
-
-
-def _vacancy_source(link: str, fallback: str | None = None) -> str:
-    host = (urlparse(link).hostname or "").lower()
-    if host == "career.habr.com":
-        return "habr"
-    if host == "hh.ru" or host.endswith(".hh.ru"):
-        return "hh"
-    if fallback in {"hh", "habr"}:
-        return fallback
-    raise ValueError(f"Unsupported vacancy source: {link}")
 
 
 async def create_profile(
@@ -132,6 +124,10 @@ async def save_vacancy_analysis(
     result: str,
     vacancy_snapshot: dict[str, Any],
 ) -> VacancyAnalysis:
+    vacancy_snapshot = dict(vacancy_snapshot)
+    validated_url = validate_vacancy_url(vacancy_snapshot.get("link"))
+    vacancy_snapshot["link"] = validated_url.url
+    vacancy_snapshot["source"] = validated_url.source
     analysis = VacancyAnalysis(
         user_id=uuid.UUID(str(user_id)),
         profile_id=uuid.UUID(str(profile_id)),
@@ -158,6 +154,18 @@ async def save_search(
     max_pages: int,
     rows: list[dict[str, Any]],
 ) -> SearchRun:
+    validated_rows: list[dict[str, Any]] = []
+    for row in rows:
+        try:
+            validated_url = validate_vacancy_url(row.get("link"))
+        except ValueError:
+            logger.warning("Отклонена вакансия с недопустимой ссылкой")
+            continue
+        validated_row = dict(row)
+        validated_row["link"] = validated_url.url
+        validated_row["source"] = validated_url.source
+        validated_rows.append(validated_row)
+
     search = SearchRun(
         user_id=user_id,
         profile_id=uuid.UUID(str(profile_id)) if profile_id else None,
@@ -166,17 +174,17 @@ async def save_search(
         filters=filters,
         area=area,
         max_pages=max_pages,
-        total_found=len(rows),
+        total_found=len(validated_rows),
     )
     session.add(search)
     await session.flush()
 
-    for position, row in enumerate(rows):
-        link = str(row.get("link") or "").strip()
+    for position, row in enumerate(validated_rows):
+        link = row["link"]
         vacancy = await session.scalar(
             select(Vacancy).where(Vacancy.external_url == link)
         )
-        source = _vacancy_source(link, row.get("source"))
+        source = row["source"]
         if vacancy is None:
             vacancy = Vacancy(
                 source=source,
@@ -237,7 +245,7 @@ async def get_search_rows(
             "city": result.vacancy.city,
             "schedule": result.vacancy.schedule,
             "experience": result.vacancy.experience,
-            "link": result.vacancy.external_url,
+            "link": safe_vacancy_url(result.vacancy.external_url),
             "query": result.query,
             "source": result.vacancy.source,
         }

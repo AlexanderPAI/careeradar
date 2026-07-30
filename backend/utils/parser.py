@@ -242,7 +242,7 @@ class HHParser:
             allow_subdomains
             and any(host.endswith(f".{allowed}") for allowed in allowed_hosts)
         )
-        if parsed.scheme not in {"http", "https"} or not host_allowed:
+        if parsed.scheme != "https" or not host_allowed:
             expected_host = sorted(allowed_hosts)[0]
             raise ValueError(f"Ожидается ссылка на вакансию с домена {expected_host}")
 
