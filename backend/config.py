@@ -125,6 +125,18 @@ class Settings(BaseSettings):
     auth_failure_delay_max_seconds: float = Field(
         4.0, ge=0.0, env="AUTH_FAILURE_DELAY_MAX_SECONDS"
     )
+    resume_upload_max_bytes: int = Field(
+        10 * 1024 * 1024, ge=1024, env="RESUME_UPLOAD_MAX_BYTES"
+    )
+    resume_docx_max_entries: int = Field(2000, ge=10, env="RESUME_DOCX_MAX_ENTRIES")
+    resume_docx_max_uncompressed_bytes: int = Field(
+        25 * 1024 * 1024,
+        ge=1024,
+        env="RESUME_DOCX_MAX_UNCOMPRESSED_BYTES",
+    )
+    resume_docx_max_compression_ratio: float = Field(
+        100.0, ge=1.0, env="RESUME_DOCX_MAX_COMPRESSION_RATIO"
+    )
     resume_retention_days: int = Field(30, ge=1, env="RESUME_RETENTION_DAYS")
     resume_cleanup_interval_minutes: int = Field(
         60, ge=1, env="RESUME_CLEANUP_INTERVAL_MINUTES"

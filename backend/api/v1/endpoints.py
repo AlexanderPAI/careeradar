@@ -23,6 +23,7 @@ from backend.db.repositories import (
     save_resume_recommendation,
     save_vacancy_analysis,
 )
+from backend.file_validation import ValidatedResumeFile, validate_resume_file
 from backend.llm_providers.base import LLMProviderError
 from backend.privacy import anonymize_text, require_llm_consent
 from backend.resume_storage import expires_at, save_upload
@@ -32,13 +33,6 @@ from shared.vacancy_urls import validate_vacancy_url
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(get_current_user)])
 
-ALLOWED_TYPES = {
-    "application/pdf": ".pdf",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
-    "application/msword": ".doc",
-    "text/plain": ".txt",
-}
-
 cv_analyzer_agent = CVAnalyzerAgent()
 resume_advisor_agent = ResumeAdvisorAgent()
 search_agent = SearchAgent()
@@ -47,21 +41,23 @@ hh_parser = HHParser([], area=1, max_pages=1)
 habr_parser = CareerHabrParser([], area=1, max_pages=1)
 
 
+def _validated_upload(file: UploadFile) -> ValidatedResumeFile:
+    try:
+        return validate_resume_file(file.file, file.filename)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post("/upload_cv")
 async def upload_cv(file: UploadFile = File(...)):
-    if file.content_type not in ALLOWED_TYPES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported {file.content_type}. Upload only *.pdf, *.docx, *.doc, *.txt files",
-        )
-    extension = ALLOWED_TYPES[file.content_type]
-    save_filename = f"{uuid.uuid4()}{extension}"
+    detected = _validated_upload(file)
+    save_filename = f"{uuid.uuid4()}{detected.extension}"
     file_path = save_upload(file, save_filename)
 
     return {
         "original_filename": file.filename,
         "stored_filename": save_filename,
-        "content_type": file.content_type,
+        "content_type": detected.content_type,
         "path": str(file_path),
     }
 
@@ -74,13 +70,8 @@ async def cv_analyzer(
     user: User = Depends(get_current_user),
 ):
     require_llm_consent(llm_processing_consent)
-    if file.content_type not in ALLOWED_TYPES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported {file.content_type}. Upload only *.pdf, *.docx, *.doc, *.txt files",
-        )
-    extension = ALLOWED_TYPES[file.content_type]
-    save_filename = f"{uuid.uuid4()}{extension}"
+    detected = _validated_upload(file)
+    save_filename = f"{uuid.uuid4()}{detected.extension}"
     file_path = save_upload(file, save_filename)
 
     try:
