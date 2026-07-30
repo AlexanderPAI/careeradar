@@ -110,6 +110,21 @@ class Settings(BaseSettings):
     )
     jwt_secret: str = Field(..., min_length=32, env="JWT_SECRET")
     jwt_expire_minutes: int = Field(480, env="JWT_EXPIRE_MINUTES")
+    auth_rate_limit_window_seconds: int = Field(
+        900, ge=60, env="AUTH_RATE_LIMIT_WINDOW_SECONDS"
+    )
+    auth_rate_limit_username_attempts: int = Field(
+        5, ge=1, env="AUTH_RATE_LIMIT_USERNAME_ATTEMPTS"
+    )
+    auth_rate_limit_ip_attempts: int = Field(
+        20, ge=1, env="AUTH_RATE_LIMIT_IP_ATTEMPTS"
+    )
+    auth_failure_delay_base_seconds: float = Field(
+        0.25, ge=0.0, env="AUTH_FAILURE_DELAY_BASE_SECONDS"
+    )
+    auth_failure_delay_max_seconds: float = Field(
+        4.0, ge=0.0, env="AUTH_FAILURE_DELAY_MAX_SECONDS"
+    )
     resume_retention_days: int = Field(30, ge=1, env="RESUME_RETENTION_DAYS")
     resume_cleanup_interval_minutes: int = Field(
         60, ge=1, env="RESUME_CLEANUP_INTERVAL_MINUTES"
