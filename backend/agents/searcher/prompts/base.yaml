@@ -41,6 +41,12 @@ parse_user_input_system: |
 
   Правила:
   - Расширяй search_queries синонимами и смежными наименованиями.
+  - Никогда не переноси слова из search_queries или общего описания работы в
+    require_keywords, exclude_keywords или exclude_companies.
+  - Заполняй require_keywords только если пользователь явно потребовал наличие
+    этих слов именно в названии вакансии. Иначе всегда возвращай [].
+  - Заполняй exclude_keywords и exclude_companies только по явному требованию
+    пользователя исключить конкретные слова или компании. Иначе возвращай [].
   - schedule, experience, employment — ТОЛЬКО из допустимых значений выше.
   - «удалёнка» → schedule: ["remote"]
   - «без junior/стажёр» → exclude_keywords: ["junior","стажёр"]

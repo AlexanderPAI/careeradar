@@ -31,13 +31,41 @@ services:
       GIGACHAT_SUB_CA_FILE: /run/careeradar/certs/russian_trusted_sub_ca.pem
       JWT_SECRET: ${JWT_SECRET:?Add JWT_SECRET with at least 32 characters to .env}
       JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-480}
+      MALWARE_SCANNER_HOST: clamav
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 512
     depends_on:
       db:
+        condition: service_healthy
+      clamav:
         condition: service_healthy
     networks:
       - public
       - frontend_backend
       - backend_db
+      - malware_scanner
+
+  clamav:
+    image: clamav/clamav-debian:1.5.3
+    restart: unless-stopped
+    volumes:
+      - clamav_signatures:/var/lib/clamav:rw
+    healthcheck:
+      test: ["CMD-SHELL", "clamdscan --ping 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 120s
+    mem_limit: 1536m
+    cpus: 1.0
+    pids_limit: 256
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - malware_scanner
 
   db:
     image: postgres:17
@@ -73,6 +101,7 @@ services:
 
 volumes:
   postgres_data:
+  clamav_signatures:
 
 networks:
   public:
@@ -80,3 +109,4 @@ networks:
     internal: true
   backend_db:
     internal: true
+  malware_scanner:

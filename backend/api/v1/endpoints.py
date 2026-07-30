@@ -25,6 +25,11 @@ from backend.db.repositories import (
 )
 from backend.file_validation import ValidatedResumeFile, validate_resume_file
 from backend.llm_providers.base import LLMProviderError
+from backend.malware_scan import (
+    MalwareDetectedError,
+    MalwareScanUnavailableError,
+    scan_file,
+)
 from backend.privacy import anonymize_text, require_llm_consent
 from backend.resume_storage import UploadTooLargeError, expires_at, save_upload
 from backend.security import get_current_user
@@ -50,9 +55,24 @@ def _validated_upload(file: UploadFile) -> ValidatedResumeFile:
 
 async def _save_validated_upload(file: UploadFile, filename: str):
     try:
-        return await save_upload(file, filename)
+        path = await save_upload(file, filename)
     except UploadTooLargeError as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
+    try:
+        await scan_file(path)
+    except MalwareDetectedError as exc:
+        path.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=422,
+            detail="Документ отклонён антивирусом",
+        ) from exc
+    except MalwareScanUnavailableError as exc:
+        path.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=503,
+            detail="Проверка документа временно недоступна",
+        ) from exc
+    return path
 
 
 @router.post("/upload_cv")

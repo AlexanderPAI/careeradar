@@ -62,7 +62,10 @@ class CVAnalyzerAgent:
     # Нода 1: читаем файл резюме
     async def extract_cv(self, state: State) -> dict:
         started_at = time.monotonic()
-        cv_text = extract_cv_text.invoke({"cv_path": state["cv_path"]})
+        cv_text = await asyncio.to_thread(
+            extract_cv_text.invoke,
+            {"cv_path": state["cv_path"]},
+        )
         llm_cv_text = anonymize_text(cv_text)
         logger.info(
             "operation_id=%s stage=extract_cv status=completed chars=%d duration_ms=%d",

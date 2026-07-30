@@ -66,11 +66,16 @@ async def login(
         await failure_delay(username_failures)
         raise HTTPException(status_code=401, detail="Неверный логин или пароль")
 
+    # The advisory locks are transaction-scoped, so release them before returning.
+    # Build the response first: rollback expires ORM attributes and reading user.id
+    # afterwards would trigger implicit async I/O (SQLAlchemy MissingGreenlet).
+    access_token = create_access_token(user)
+    response_username = user.username
     await session.rollback()
     return {
-        "access_token": create_access_token(user),
+        "access_token": access_token,
         "token_type": "bearer",
-        "username": user.username,
+        "username": response_username,
     }
 
 

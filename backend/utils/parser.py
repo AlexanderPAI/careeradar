@@ -229,6 +229,16 @@ class HHParser:
         return text.strip()
 
     @staticmethod
+    def _normalize_search_result_url(href: str | None) -> str:
+        """Turn HH's relative card href into an absolute URL for final validation."""
+        if not href:
+            return "—"
+        href_without_query = href.split("?", 1)[0].strip()
+        if href_without_query.startswith("/vacancy/"):
+            return f"https://hh.ru{href_without_query}"
+        return href_without_query
+
+    @staticmethod
     def _vacancy_id_from_url(
         url: str,
         *,
@@ -439,7 +449,7 @@ class HHParser:
                 title_el = await card.query_selector('[data-qa="serp-item__title"]')
                 title = self._clean(await title_el.inner_text()) if title_el else "—"
                 href = await title_el.get_attribute("href") if title_el else None
-                link = href.split("?")[0] if href else "—"
+                link = self._normalize_search_result_url(href)
 
                 company_el = await card.query_selector(
                     '[data-qa="vacancy-serp__vacancy-employer"]'

@@ -140,6 +140,27 @@ class Settings(BaseSettings):
     request_body_max_bytes: int = Field(
         25 * 1024 * 1024, ge=1024, env="REQUEST_BODY_MAX_BYTES"
     )
+    malware_scan_enabled: bool = Field(True, env="MALWARE_SCAN_ENABLED")
+    malware_scanner_host: str = Field("clamav", env="MALWARE_SCANNER_HOST")
+    malware_scanner_port: int = Field(3310, ge=1, le=65535, env="MALWARE_SCANNER_PORT")
+    malware_scan_timeout_seconds: float = Field(
+        30.0, ge=1.0, env="MALWARE_SCAN_TIMEOUT_SECONDS"
+    )
+    malware_scan_chunk_bytes: int = Field(
+        1024 * 1024, ge=1024, env="MALWARE_SCAN_CHUNK_BYTES"
+    )
+    document_parser_timeout_seconds: float = Field(
+        20.0, ge=1.0, env="DOCUMENT_PARSER_TIMEOUT_SECONDS"
+    )
+    document_parser_cpu_seconds: int = Field(
+        15, ge=1, env="DOCUMENT_PARSER_CPU_SECONDS"
+    )
+    document_parser_memory_bytes: int = Field(
+        512 * 1024 * 1024, ge=64 * 1024 * 1024, env="DOCUMENT_PARSER_MEMORY_BYTES"
+    )
+    document_parser_max_output_chars: int = Field(
+        2_000_000, ge=1000, env="DOCUMENT_PARSER_MAX_OUTPUT_CHARS"
+    )
     resume_retention_days: int = Field(30, ge=1, env="RESUME_RETENTION_DAYS")
     resume_cleanup_interval_minutes: int = Field(
         60, ge=1, env="RESUME_CLEANUP_INTERVAL_MINUTES"
@@ -168,6 +189,10 @@ class Settings(BaseSettings):
     def _validate_production_security(self) -> None:
         if self.app_env != "production":
             return
+        if not self.malware_scan_enabled:
+            raise ValueError(
+                "MALWARE_SCAN_ENABLED=false запрещён при APP_ENV=production"
+            )
         if not self.gigachat_verify_ssl_certs:
             raise ValueError(
                 "GIGACHAT_VERIFY_SSL_CERTS=false запрещён при APP_ENV=production"

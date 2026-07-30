@@ -2,7 +2,7 @@ from pathlib import Path
 
 from langchain_core.tools import tool
 
-from backend.utils.readers import FileReader
+from backend.isolated_document_reader import read_document_isolated
 
 
 @tool
@@ -17,5 +17,4 @@ def extract_cv_text(cv_path: str) -> str:
         Текст резюме в виде строки.
     """
     file_path = Path(cv_path)
-    file_reader = FileReader()
-    return file_reader.read_file(file_path)
+    return read_document_isolated(file_path)

@@ -74,6 +74,27 @@ class Agent:
         self.llm = llm if llm is not None else create_llm_adapter()
         self.graph = self._build_graph()
 
+    @staticmethod
+    def _sanitize_inferred_filters(filters: dict, user_text: str) -> dict:
+        """Do not turn general search terms into mandatory title keywords."""
+        sanitized = dict(filters)
+        required_keywords = sanitized.get("require_keywords")
+        explicit_title_requirement = re.search(
+            r"(?:обязательн\w*|долж\w*)"
+            r".{0,80}(?:в\s+названи\w*|названи\w*)"
+            r"|(?:в\s+названи\w*|названи\w*)"
+            r".{0,80}(?:обязательн\w*|долж\w*|содерж\w*)",
+            user_text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if required_keywords and explicit_title_requirement is None:
+            logger.warning(
+                "Игнорирую не запрошенный пользователем require_keywords: %r",
+                required_keywords,
+            )
+            sanitized["require_keywords"] = []
+        return sanitized
+
     # Нода 1: приветствие
     async def greet(self, state: State) -> dict:
         return {
@@ -121,7 +142,10 @@ class Agent:
         search_queries = parsed.get("search_queries") or [user_text[:80]]
         area = parsed.get("area", 1)
         max_pages = parsed.get("max_pages", 3)
-        filters = parsed.get("filters", {})
+        filters = self._sanitize_inferred_filters(
+            parsed.get("filters") or {},
+            user_text,
+        )
         logger.info(
             "operation_id=%s stage=parse_search_request status=completed "
             "queries=%d active_filters=%d duration_ms=%d",
