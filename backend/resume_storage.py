@@ -1,5 +1,4 @@
 import os
-import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -13,6 +12,10 @@ from backend.db.models import CandidateProfile
 UPLOAD_DIR = Path("backend/storage/cv")
 
 
+class UploadTooLargeError(ValueError):
+    pass
+
+
 def ensure_private_storage() -> None:
     """Create the resume directory and repair permissions of existing content."""
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -22,13 +25,27 @@ def ensure_private_storage() -> None:
             path.chmod(0o600)
 
 
-def save_upload(file: UploadFile, filename: str) -> Path:
+async def save_upload(
+    file: UploadFile,
+    filename: str,
+    *,
+    max_bytes: int | None = None,
+) -> Path:
+    hard_limit = max_bytes if max_bytes is not None else cfg.resume_upload_max_bytes
     ensure_private_storage()
     path = (UPLOAD_DIR / filename).resolve()
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    written = 0
     try:
         with os.fdopen(descriptor, "wb") as destination:
-            shutil.copyfileobj(file.file, destination)
+            await file.seek(0)
+            while chunk := await file.read(1024 * 1024):
+                written += len(chunk)
+                if written > hard_limit:
+                    raise UploadTooLargeError(
+                        f"Файл превышает допустимый размер {hard_limit} байт"
+                    )
+                destination.write(chunk)
     except BaseException:
         path.unlink(missing_ok=True)
         raise

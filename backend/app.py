@@ -12,6 +12,7 @@ from backend.api.v1.history import router as history_router
 from backend.config import cfg
 from backend.db.connector import async_session
 from backend.llm_providers.base import LLMProviderError
+from backend.request_limits import RequestBodyLimitMiddleware
 from backend.resume_storage import ensure_private_storage, purge_expired_resumes
 
 logger = logging.getLogger("RESUME_RETENTION")
@@ -40,6 +41,10 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+app.add_middleware(
+    RequestBodyLimitMiddleware,
+    max_bytes=cfg.request_body_max_bytes,
+)
 app.include_router(auth_router)
 app.include_router(history_router)
 app.include_router(router)

@@ -137,6 +137,9 @@ class Settings(BaseSettings):
     resume_docx_max_compression_ratio: float = Field(
         100.0, ge=1.0, env="RESUME_DOCX_MAX_COMPRESSION_RATIO"
     )
+    request_body_max_bytes: int = Field(
+        25 * 1024 * 1024, ge=1024, env="REQUEST_BODY_MAX_BYTES"
+    )
     resume_retention_days: int = Field(30, ge=1, env="RESUME_RETENTION_DAYS")
     resume_cleanup_interval_minutes: int = Field(
         60, ge=1, env="RESUME_CLEANUP_INTERVAL_MINUTES"

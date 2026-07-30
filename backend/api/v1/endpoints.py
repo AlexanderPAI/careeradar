@@ -26,7 +26,7 @@ from backend.db.repositories import (
 from backend.file_validation import ValidatedResumeFile, validate_resume_file
 from backend.llm_providers.base import LLMProviderError
 from backend.privacy import anonymize_text, require_llm_consent
-from backend.resume_storage import expires_at, save_upload
+from backend.resume_storage import UploadTooLargeError, expires_at, save_upload
 from backend.security import get_current_user
 from backend.utils.parser import CareerHabrParser, HHParser
 from shared.vacancy_urls import validate_vacancy_url
@@ -48,11 +48,18 @@ def _validated_upload(file: UploadFile) -> ValidatedResumeFile:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+async def _save_validated_upload(file: UploadFile, filename: str):
+    try:
+        return await save_upload(file, filename)
+    except UploadTooLargeError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+
+
 @router.post("/upload_cv")
 async def upload_cv(file: UploadFile = File(...)):
     detected = _validated_upload(file)
     save_filename = f"{uuid.uuid4()}{detected.extension}"
-    file_path = save_upload(file, save_filename)
+    file_path = await _save_validated_upload(file, save_filename)
 
     return {
         "original_filename": file.filename,
@@ -72,7 +79,7 @@ async def cv_analyzer(
     require_llm_consent(llm_processing_consent)
     detected = _validated_upload(file)
     save_filename = f"{uuid.uuid4()}{detected.extension}"
-    file_path = save_upload(file, save_filename)
+    file_path = await _save_validated_upload(file, save_filename)
 
     try:
         search_prompt, user_profile, state = await cv_analyzer_agent.run(str(file_path))
